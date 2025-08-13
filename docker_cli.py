@@ -451,34 +451,11 @@ class DockerCLI:
             return False
 
     def attach(self, container_id):
-        """附加到运行中的容器"""
-        containers = self._load_containers()
-        if container_id not in containers:
-            logger.error(f"容器不存在: {container_id}")
-            return False
-
-        container_info = containers[container_id]
-        status = container_info.get('status')
-        if status != 'running':
-            logger.error(f"容器 {container_id} 未在运行中")
-            return False
-
-        pid = container_info.get('pid')
-        if not pid:
-            logger.error(f"容器 {container_id} 没有PID信息")
-            return False
-
-        if not self._is_process_running(pid):
-            logger.error(f"容器 {container_id} 进程未运行")
-            return False
-
-        # For attach, we need to connect to the running container
-        # This is a simplified implementation that just shows logs
-        logger.info(f"附加到容器 {container_id} (PID: {pid})")
-        logger.info("按 Ctrl+C 退出附加模式")
-        
-        # Show logs in follow mode
-        return self.logs(container_id, follow=True)
+        """通过在容器中执行一个交互式shell来附加到容器"""
+        logger.info(f"附加到容器 {container_id} (通过 'exec -it <shell>' 实现)")
+        logger.info("输入 'exit' 或按 Ctrl+D 退出.")
+        # Attach is implemented by executing an interactive shell in the container.
+        return self.exec(container_id, [], interactive=True)
 
     def exec(self, container_id, command, interactive=False):
         """在运行中的容器中执行命令"""
@@ -528,7 +505,7 @@ class DockerCLI:
             proot_cmd.extend(['-b', bind])
 
         # Set working directory
-        workdir = container_info.get('run_args', {}).get('workdir', '/')
+        workdir = container_info.get('run_args', {}).get('workdir') or '/'
         proot_cmd.extend(['-w', workdir])
 
         # If no command provided, use default shell
@@ -542,6 +519,13 @@ class DockerCLI:
                     shell = s
                     break
             command = [shell]
+        elif isinstance(command, str):
+            # If command is a string, convert it to a list
+            command = [command]
+        
+        # Ensure command is a list and not None
+        if not isinstance(command, list):
+            command = [str(command)] if command else ['/bin/sh']
 
         # Add the command to execute
         proot_cmd.extend(command)
