@@ -120,6 +120,7 @@ class DockerCLI:
                 self.bind = kwargs.get('bind', [])
                 self.workdir = kwargs.get('workdir')
                 self.detach = kwargs.get('detach', False)
+                self.interactive = kwargs.get('interactive', False)
                 self.force_download = kwargs.get('force_download', False)
                 self.command = command
                 
@@ -217,6 +218,8 @@ class DockerCLI:
             cmd.append('--force-download')
         if args.workdir:
             cmd.extend(['--workdir', args.workdir])
+        if args.interactive:
+            cmd.append('--interactive')
         for e in args.env:
             cmd.extend(['-e', e])
         for b in args.bind:
@@ -342,6 +345,7 @@ class DockerCLI:
                 self.workdir = run_args.get('workdir')
                 self.command = command
                 self.detach = is_detached
+                self.interactive = run_args.get('interactive', False)
                 self.force_download = False
 
         args = Args()
@@ -636,6 +640,7 @@ def create_parser():
   # 运行容器
   %(prog)s run alpine:latest
   %(prog)s run -d nginx:alpine
+  %(prog)s run -it alpine:latest /bin/sh
   %(prog)s run -e "API_KEY=123" -v /host:/container alpine:latest /bin/sh
 
   # 查看容器
@@ -677,6 +682,7 @@ def create_parser():
     run_parser.add_argument('image', help='镜像URL')
     run_parser.add_argument('command', nargs='*', help='要执行的命令')
     run_parser.add_argument('-d', '--detach', action='store_true', help='后台运行')
+    run_parser.add_argument('-it', '--interactive-tty', action='store_true', help='交互式运行容器 (分配伪TTY并保持stdin打开)')
     run_parser.add_argument('-e', '--env', action='append', default=[], help='环境变量 (KEY=VALUE)')
     run_parser.add_argument('-v', '--volume', dest='bind', action='append', default=[], help='挂载卷 (HOST:CONTAINER)')
     run_parser.add_argument('-w', '--workdir', help='工作目录')
@@ -746,6 +752,7 @@ def main():
                 bind=args.bind,
                 workdir=args.workdir,
                 detach=args.detach,
+                interactive=args.interactive_tty,
                 force_download=args.force_download
             )
             sys.exit(0 if container_id else 1)

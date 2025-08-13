@@ -44,6 +44,9 @@ docker run alpine:latest echo "Hello from container"
 # Run a container in the background (detached)
 docker run -d -e "API_KEY=sk-12345" --volume /sdcard:/data nginx:alpine
 
+# Run a container interactively
+docker run -it swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:latest /bin/sh
+
 # List running containers
 docker ps
 

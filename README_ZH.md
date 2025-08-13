@@ -44,6 +44,9 @@ docker run alpine:latest echo "Hello from container"
 # 在后台（分离模式）运行一个容器
 docker run -d -e "API_KEY=sk-12345" --volume /sdcard:/data nginx:alpine
 
+# 交互式运行容器
+docker run -it alpine:latest /bin/sh
+
 # 列出正在运行的容器
 docker ps
 

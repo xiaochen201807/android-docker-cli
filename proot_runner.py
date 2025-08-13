@@ -570,11 +570,17 @@ class ProotRunner:
                     logger.error(f"后台启动失败: {e}")
                     return False
             else:
-                # 前台运行
+                # 前台运行（交互式或非交互式）
                 logger.info("进入容器环境...")
                 env = self._prepare_environment()
-                # Also log foreground processes if log file is provided
-                subprocess.run(proot_cmd, env=env, stdout=log_file_handle, stderr=log_file_handle)
+                
+                # 根据是否为交互式模式设置stdin/stdout/stderr
+                if getattr(args, 'interactive', False):
+                    # 交互式模式：连接到终端
+                    subprocess.run(proot_cmd, env=env)
+                else:
+                    # 非交互式模式：重定向到日志文件（如果提供）
+                    subprocess.run(proot_cmd, env=env, stdout=log_file_handle, stderr=log_file_handle)
                 return True
 
         except KeyboardInterrupt:
@@ -693,6 +699,9 @@ def main():
 
   # 后台运行
   %(prog)s -w /app -d nginx:alpine
+  
+  # 交互式运行
+  %(prog)s -it alpine:latest /bin/sh
 
   # 缓存管理
   %(prog)s --list-cache
@@ -735,6 +744,12 @@ def main():
         '-d', '--detach',
         action='store_true',
         help='后台运行'
+    )
+    
+    parser.add_argument(
+        '-it', '--interactive',
+        action='store_true',
+        help='交互式运行容器 (分配伪TTY并保持stdin打开)'
     )
     
     parser.add_argument(
