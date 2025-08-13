@@ -624,7 +624,7 @@ class DockerCLI:
 def create_parser():
     """创建命令行解析器"""
     parser = argparse.ArgumentParser(
-        prog='docker-proot',
+        prog='docker',
         description='Docker风格的proot容器管理工具',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""

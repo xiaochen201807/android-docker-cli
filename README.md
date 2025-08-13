@@ -2,7 +2,7 @@
 
 English | [中文](README_ZH.md)
 
-A tool to run Docker images on Android/Termux using `proot`, without needing a Docker engine. This project provides a Docker-like command-line interface to manage persistent containers.
+A tool to run Docker images on Android using `proot`, without needing a Docker engine. This project is designed to be used within the [Termux](https://github.com/termux/termux-app) application, providing a Docker-like command-line interface to manage persistent containers.
 
 ## Core Features
 

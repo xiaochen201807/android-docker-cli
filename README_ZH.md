@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-一个使用 `proot` 在 Android/Termux 上运行 Docker 镜像的工具，无需 Docker 引擎。本项目提供了一个类似 Docker 的命令行界面，用于管理持久化容器。
+一个使用 `proot` 在 Android 上运行 Docker 镜像的工具，无需 Docker 引擎。本项目旨在 [Termux](https://github.com/termux/termux-app) 应用内部使用，为 Android 提供一个类似 Docker 的命令行界面，用于管理持久化容器。
 
 ## 核心功能
 
