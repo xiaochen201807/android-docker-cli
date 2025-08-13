@@ -284,7 +284,26 @@ class ProotRunner:
 
         logger.warning("未找到可用的shell，使用默认/bin/sh")
         return ['/bin/sh']  # 最后的备选
-    
+
+    def _get_available_shell(self):
+        """获取可用的shell路径（用于执行脚本）"""
+        # 查找可用的shell
+        default_shells = ['/bin/bash', '/bin/sh', '/bin/ash', '/bin/dash']
+        for shell in default_shells:
+            shell_path = os.path.join(self.rootfs_dir, shell.lstrip('/'))
+            if os.path.exists(shell_path):
+                logger.debug(f"找到可用shell用于执行脚本: {shell}")
+                return shell
+
+        # 如果没有找到shell，尝试busybox
+        busybox_path = os.path.join(self.rootfs_dir, 'bin/busybox')
+        if os.path.exists(busybox_path):
+            logger.debug("使用busybox shell执行脚本")
+            return '/bin/busybox'
+
+        logger.warning("未找到可用的shell执行脚本，使用默认/bin/sh")
+        return '/bin/sh'  # 最后的备选
+
     def _get_default_env(self):
         """获取默认环境变量"""
         env_vars = {}
@@ -318,24 +337,24 @@ class ProotRunner:
     def _build_proot_command(self, args):
         """构建proot命令"""
         cmd = ['proot']
-        
+
         # 基本选项
         cmd.extend(['-r', self.rootfs_dir])
-        
+
         # 绑定挂载
         default_binds = [
             '/dev',
-            '/proc', 
+            '/proc',
             '/sys'
         ]
-        
+
         # 在Android/Termux中添加额外的绑定
         if self._is_android_environment():
             default_binds.extend([
                 '/sdcard',
                 '/system/etc/resolv.conf:/etc/resolv.conf'
             ])
-        
+
         for bind in default_binds:
             if ':' in bind:
                 src, dst = bind.split(':', 1)
@@ -344,27 +363,27 @@ class ProotRunner:
             else:
                 if os.path.exists(bind):
                     cmd.extend(['-b', bind])
-        
+
         # 用户指定的绑定挂载
         for bind in args.bind:
             cmd.extend(['-b', bind])
-        
+
         # 工作目录
         workdir = args.workdir or self._get_working_directory()
         cmd.extend(['-w', workdir])
-        
+
         # 环境变量
         env_vars = self._get_default_env()
-        
+
         # 添加用户指定的环境变量
         for env in args.env:
             if '=' in env:
                 key, value = env.split('=', 1)
                 env_vars[key] = value
-        
+
         # proot不支持-E选项，需要通过其他方式设置环境变量
         # 我们将通过修改启动命令来设置环境变量
-        
+
         # 构建最终的执行命令
         if args.command:
             final_command = args.command
@@ -374,8 +393,15 @@ class ProotRunner:
 
         # 创建启动脚本来设置环境变量
         if env_vars or self._is_android_environment():
+            # 获取可用的shell来执行启动脚本
+            available_shell = self._get_available_shell()
             startup_script = self._create_startup_script(env_vars, final_command)
-            cmd.extend(['/bin/sh', startup_script])
+
+            # 如果是busybox，需要添加sh参数
+            if available_shell == '/bin/busybox':
+                cmd.extend([available_shell, 'sh', startup_script])
+            else:
+                cmd.extend([available_shell, startup_script])
         else:
             cmd.extend(final_command)
 
@@ -383,7 +409,14 @@ class ProotRunner:
 
     def _create_startup_script(self, env_vars, command):
         """创建启动脚本来设置环境变量和执行命令"""
-        script_content = ['#!/bin/sh']
+        # 获取可用的shell来作为脚本的shebang
+        available_shell = self._get_available_shell()
+
+        # 如果是busybox，需要特殊处理
+        if available_shell == '/bin/busybox':
+            script_content = ['#!/bin/busybox sh']
+        else:
+            script_content = [f'#!{available_shell}']
 
         # 添加环境变量设置
         for key, value in env_vars.items():
@@ -413,6 +446,7 @@ class ProotRunner:
         os.chmod(script_path, 0o755)
 
         logger.debug(f"创建启动脚本: {script_path}")
+        logger.debug(f"脚本内容:\n{chr(10).join(script_content)}")
         return '/startup.sh'
     
     def _is_android_environment(self):
@@ -481,9 +515,23 @@ class ProotRunner:
             if args.detach:
                 # 后台运行
                 env = self._prepare_environment()
-                process = subprocess.Popen(proot_cmd, env=env)
-                logger.info(f"容器已在后台启动，PID: {process.pid}")
-                return True
+                # 重定向标准输入输出，避免后台进程挂起
+                try:
+                    process = subprocess.Popen(
+                        proot_cmd,
+                        env=env,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True  # 创建新的进程组
+                    )
+                    logger.info(f"容器已在后台启动，PID: {process.pid}")
+                    # 后台运行时不清理临时目录，让进程继续使用
+                    logger.info(f"临时目录保留: {self.temp_dir}")
+                    return True
+                except Exception as e:
+                    logger.error(f"后台启动失败: {e}")
+                    return False
             else:
                 # 前台运行
                 logger.info("进入容器环境...")
@@ -498,7 +546,9 @@ class ProotRunner:
             logger.error(f"运行失败: {e}")
             return False
         finally:
-            self._cleanup()
+            # 只有在前台运行时才清理临时目录
+            if not args.detach:
+                self._cleanup()
     
     def _cleanup(self):
         """清理临时文件"""
