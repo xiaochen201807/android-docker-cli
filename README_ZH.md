@@ -69,6 +69,13 @@ docker restart <container_id>
 # 删除一个容器
 docker rm <container_id>
 
+# 附加到运行中的容器
+docker attach <container_id>
+
+# 在运行中的容器中执行命令
+docker exec <container_id> ls -l
+docker exec -it <container_id> /bin/sh
+
 # 列出缓存的镜像
 docker images
 
@@ -78,7 +85,7 @@ docker rmi alpine:latest
 
 ## 主要特性
 
-- ✅ **完整的容器生命周期**: `run`, `ps`, `stop`, `start`, `restart`, `logs`, `rm`。
+- ✅ **完整的容器生命周期**: `run`, `ps`, `stop`, `start`, `restart`, `logs`, `rm`, `attach`, `exec`。
 - ✅ **Docker风格CLI**: 熟悉且直观的命令行界面。
 - ✅ **持久化存储**: 容器在重启后能保持其状态和文件系统，存储于 `~/.docker_proot_cache/`。
 - ✅ **零Python外部依赖**: 仅需要 `curl`、`tar` 和 Python 标准库。

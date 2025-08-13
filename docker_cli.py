@@ -450,6 +450,129 @@ class DockerCLI:
             logger.error(f"读取日志失败: {e}")
             return False
 
+    def attach(self, container_id):
+        """附加到运行中的容器"""
+        containers = self._load_containers()
+        if container_id not in containers:
+            logger.error(f"容器不存在: {container_id}")
+            return False
+
+        container_info = containers[container_id]
+        status = container_info.get('status')
+        if status != 'running':
+            logger.error(f"容器 {container_id} 未在运行中")
+            return False
+
+        pid = container_info.get('pid')
+        if not pid:
+            logger.error(f"容器 {container_id} 没有PID信息")
+            return False
+
+        if not self._is_process_running(pid):
+            logger.error(f"容器 {container_id} 进程未运行")
+            return False
+
+        # For attach, we need to connect to the running container
+        # This is a simplified implementation that just shows logs
+        logger.info(f"附加到容器 {container_id} (PID: {pid})")
+        logger.info("按 Ctrl+C 退出附加模式")
+        
+        # Show logs in follow mode
+        return self.logs(container_id, follow=True)
+
+    def exec(self, container_id, command, interactive=False):
+        """在运行中的容器中执行命令"""
+        containers = self._load_containers()
+        if container_id not in containers:
+            logger.error(f"容器不存在: {container_id}")
+            return False
+
+        container_info = containers[container_id]
+        status = container_info.get('status')
+        if status != 'running':
+            logger.error(f"容器 {container_id} 未在运行中")
+            return False
+
+        pid = container_info.get('pid')
+        if not pid:
+            logger.error(f"容器 {container_id} 没有PID信息")
+            return False
+
+        if not self._is_process_running(pid):
+            logger.error(f"容器 {container_id} 进程未运行")
+            return False
+
+        # Get container directory and rootfs path
+        container_dir = container_info.get('container_dir')
+        if not container_dir:
+            logger.error(f"找不到容器 {container_id} 的目录")
+            return False
+
+        rootfs_dir = os.path.join(container_dir, 'rootfs')
+        if not os.path.exists(rootfs_dir):
+            logger.error(f"找不到容器 {container_id} 的根文件系统")
+            return False
+
+        # Build exec command using proot
+        proot_cmd = ['proot', '-r', rootfs_dir]
+        
+        # Add default binds
+        default_binds = ['/dev', '/proc', '/sys']
+        for bind in default_binds:
+            if os.path.exists(bind):
+                proot_cmd.extend(['-b', bind])
+
+        # Add user specified binds from original container
+        original_binds = container_info.get('run_args', {}).get('bind', [])
+        for bind in original_binds:
+            proot_cmd.extend(['-b', bind])
+
+        # Set working directory
+        workdir = container_info.get('run_args', {}).get('workdir', '/')
+        proot_cmd.extend(['-w', workdir])
+
+        # If no command provided, use default shell
+        if not command:
+            # Find available shell
+            default_shells = ['/bin/bash', '/bin/sh']
+            shell = '/bin/sh'  # default fallback
+            for s in default_shells:
+                shell_path = os.path.join(rootfs_dir, s.lstrip('/'))
+                if os.path.exists(shell_path):
+                    shell = s
+                    break
+            command = [shell]
+
+        # Add the command to execute
+        proot_cmd.extend(command)
+
+        logger.info(f"在容器 {container_id} 中执行命令: {' '.join(command)}")
+        
+        try:
+            if interactive:
+                # Interactive mode: connect stdin/stdout/stderr
+                env = os.environ.copy()
+                # Remove LD_PRELOAD for Android Termux compatibility
+                if 'LD_PRELOAD' in env:
+                    del env['LD_PRELOAD']
+                subprocess.run(proot_cmd, env=env)
+            else:
+                # Non-interactive mode: capture output
+                env = os.environ.copy()
+                # Remove LD_PRELOAD for Android Termux compatibility
+                if 'LD_PRELOAD' in env:
+                    del env['LD_PRELOAD']
+                result = subprocess.run(proot_cmd, env=env, capture_output=True, text=True)
+                if result.stdout:
+                    print(result.stdout, end='')
+                if result.stderr:
+                    print(result.stderr, end='', file=sys.stderr)
+                return result.returncode == 0
+            return True
+        except Exception as e:
+            logger.error(f"执行命令失败: {e}")
+            return False
+
     def ps(self, all_containers=False):
         """列出容器"""
         containers = self._load_containers()
@@ -654,6 +777,13 @@ def create_parser():
   %(prog)s stop <container_id>
   %(prog)s rm <container_id>
 
+  # 附加到运行中的容器
+  %(prog)s attach <container_id>
+
+  # 在运行中的容器中执行命令
+  %(prog)s exec <container_id> ls -l
+  %(prog)s exec -it <container_id> /bin/sh
+
   # 删除镜像
   %(prog)s rmi alpine:latest
         """
@@ -720,6 +850,16 @@ def create_parser():
     rm_parser = subparsers.add_parser('rm', help='删除容器')
     rm_parser.add_argument('container', help='容器ID')
     rm_parser.add_argument('-f', '--force', action='store_true', help='强制删除运行中的容器')
+    
+    # attach 命令
+    attach_parser = subparsers.add_parser('attach', help='附加到运行中的容器并查看输出')
+    attach_parser.add_argument('container', help='容器ID')
+    
+    # exec 命令
+    exec_parser = subparsers.add_parser('exec', help='在运行中的容器中执行命令')
+    exec_parser.add_argument('container', help='容器ID')
+    exec_parser.add_argument('command', nargs='*', help='要执行的命令')
+    exec_parser.add_argument('-it', '--interactive-tty', action='store_true', help='交互式运行容器 (分配伪TTY并保持stdin打开)')
 
     return parser
 
@@ -785,6 +925,14 @@ def main():
 
         elif args.subcommand == 'rm':
             success = cli.rm(args.container, force=args.force)
+            sys.exit(0 if success else 1)
+            
+        elif args.subcommand == 'attach':
+            success = cli.attach(args.container)
+            sys.exit(0 if success else 1)
+            
+        elif args.subcommand == 'exec':
+            success = cli.exec(args.container, args.command, interactive=args.interactive_tty)
             sys.exit(0 if success else 1)
 
         else:

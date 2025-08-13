@@ -69,6 +69,13 @@ docker restart <container_id>
 # Remove a container
 docker rm <container_id>
 
+# Attach to a running container
+docker attach <container_id>
+
+# Execute a command in a running container
+docker exec <container_id> ls -l
+docker exec -it <container_id> /bin/sh
+
 # List cached images
 docker images
 
@@ -78,7 +85,7 @@ docker rmi alpine:latest
 
 ## Key Features
 
-- ✅ **Full Container Lifecycle**: `run`, `ps`, `stop`, `start`, `restart`, `logs`, `rm`.
+- ✅ **Full Container Lifecycle**: `run`, `ps`, `stop`, `start`, `restart`, `logs`, `rm`, `attach`, `exec`.
 - ✅ **Docker-Style CLI**: A familiar and intuitive command-line interface.
 - ✅ **Persistent Storage**: Containers maintain their state and filesystem across restarts, stored in `~/.docker_proot_cache/`.
 - ✅ **Zero External Python Dependencies**: Only requires `curl`, `tar`, and Python standard library.
