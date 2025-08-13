@@ -137,19 +137,28 @@ class ProotRunner:
 
         return any(url_indicators)
 
-    def _prepare_rootfs(self, input_path, force_download=False):
+    def _prepare_rootfs(self, input_path, force_download=False, provided_rootfs_dir=None):
         """准备根文件系统（下载或使用现有）"""
+        
+        # 对于重启操作，如果持久化目录已存在且非空，则直接使用
+        if provided_rootfs_dir and os.path.exists(provided_rootfs_dir) and os.listdir(provided_rootfs_dir):
+            logger.info(f"使用现有的持久化根文件系统: {provided_rootfs_dir}")
+            self.rootfs_dir = provided_rootfs_dir
+            self.temp_dir = None # We are not managing a temporary directory
+            return self.rootfs_dir
+
+        # 否则，执行正常的下载和解压逻辑
         if self._is_image_url(input_path):
             # 这是一个镜像URL，需要下载
             logger.info(f"检测到镜像URL: {input_path}")
             cache_path = self._download_image(input_path, force_download)
             if not cache_path:
                 return None
-            return self._extract_rootfs_if_needed(cache_path)
+            return self._extract_rootfs_if_needed(cache_path, provided_rootfs_dir=provided_rootfs_dir)
         else:
             # 这是本地文件或目录
             logger.info(f"使用本地根文件系统: {input_path}")
-            return self._extract_rootfs_if_needed(input_path)
+            return self._extract_rootfs_if_needed(input_path, provided_rootfs_dir=provided_rootfs_dir)
         
     def _check_dependencies(self):
         """检查必要的依赖是否已安装"""
@@ -194,32 +203,11 @@ class ProotRunner:
 
         return True
     
-    def _extract_rootfs_if_needed(self, rootfs_path):
-        """如果输入是tar文件，则解压到临时目录"""
-        if rootfs_path.endswith('.tar') or rootfs_path.endswith('.tar.gz'):
-            logger.info(f"检测到tar文件，正在解压: {rootfs_path}")
-            
-            # 创建临时目录
-            self.temp_dir = tempfile.mkdtemp(prefix='proot_runner_')
-            self.rootfs_dir = os.path.join(self.temp_dir, 'rootfs')
-            os.makedirs(self.rootfs_dir, exist_ok=True)
-            
-            # 解压tar文件
-            if rootfs_path.endswith('.tar.gz'):
-                cmd = ['tar', '-xzf', rootfs_path, '-C', self.rootfs_dir]
-            else:
-                cmd = ['tar', '-xf', rootfs_path, '-C', self.rootfs_dir]
-            
-            try:
-                subprocess.run(cmd, check=True)
-                logger.info(f"根文件系统已解压到: {self.rootfs_dir}")
-                return self.rootfs_dir
-            except subprocess.CalledProcessError as e:
-                logger.error(f"解压失败: {e}")
-                self._cleanup()
-                return None
-        else:
-            # 假设是已经解压的目录
+    def _extract_rootfs_if_needed(self, rootfs_path, provided_rootfs_dir=None):
+        """如果输入是tar文件，则解压到指定目录"""
+
+        # 1. 如果输入不是tar文件，按旧逻辑处理
+        if not (rootfs_path.endswith('.tar') or rootfs_path.endswith('.tar.gz')):
             if os.path.isdir(rootfs_path):
                 self.rootfs_dir = os.path.abspath(rootfs_path)
                 logger.info(f"使用现有根文件系统目录: {self.rootfs_dir}")
@@ -227,6 +215,36 @@ class ProotRunner:
             else:
                 logger.error(f"无效的根文件系统路径: {rootfs_path}")
                 return None
+
+        # 2. 确定解压目标目录
+        is_temp = False
+        if provided_rootfs_dir:
+            target_dir = provided_rootfs_dir
+            self.temp_dir = None
+        else:
+            self.temp_dir = tempfile.mkdtemp(prefix='proot_runner_')
+            target_dir = os.path.join(self.temp_dir, 'rootfs')
+            is_temp = True
+        
+        self.rootfs_dir = target_dir
+        os.makedirs(self.rootfs_dir, exist_ok=True)
+
+        # 3. 解压tar文件
+        logger.info(f"检测到tar文件，正在解压: {rootfs_path} -> {self.rootfs_dir}")
+        if rootfs_path.endswith('.tar.gz'):
+            cmd = ['tar', '-xzf', rootfs_path, '-C', self.rootfs_dir]
+        else:
+            cmd = ['tar', '-xf', rootfs_path, '-C', self.rootfs_dir]
+        
+        try:
+            subprocess.run(cmd, check=True)
+            logger.info(f"根文件系统已解压到: {self.rootfs_dir}")
+            return self.rootfs_dir
+        except subprocess.CalledProcessError as e:
+            logger.error(f"解压失败: {e}")
+            if is_temp:
+                self._cleanup()
+            return None
     
     def _find_image_config(self):
         """查找镜像配置信息"""
@@ -487,7 +505,7 @@ class ProotRunner:
 
         return env
     
-    def run(self, input_path, args):
+    def run(self, input_path, args, rootfs_dir=None, pid_file=None):
         """运行容器（一条龙服务）"""
         try:
             # 检查依赖
@@ -496,7 +514,7 @@ class ProotRunner:
 
             # 准备根文件系统（下载或使用现有）
             logger.info("准备根文件系统...")
-            rootfs_dir = self._prepare_rootfs(input_path, args.force_download)
+            rootfs_dir = self._prepare_rootfs(input_path, args.force_download, provided_rootfs_dir=rootfs_dir)
             if not rootfs_dir:
                 return False
 
@@ -511,23 +529,42 @@ class ProotRunner:
             logger.info(f"启动容器...")
             logger.debug(f"proot命令: {' '.join(proot_cmd)}")
 
+            # 日志文件处理
+            log_file_path = getattr(args, 'log_file', None)
+            log_file_handle = None
+            if log_file_path:
+                try:
+                    # Append to the log file
+                    log_file_handle = open(log_file_path, 'a')
+                except IOError as e:
+                    logger.error(f"无法打开日志文件 {log_file_path}: {e}")
+
             # 运行proot
             if args.detach:
                 # 后台运行
                 env = self._prepare_environment()
-                # 重定向标准输入输出，避免后台进程挂起
+                
+                stdout_dest = log_file_handle or subprocess.DEVNULL
+                stderr_dest = log_file_handle or subprocess.DEVNULL
+
                 try:
                     process = subprocess.Popen(
                         proot_cmd,
                         env=env,
                         stdin=subprocess.DEVNULL,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True  # 创建新的进程组
+                        stdout=stdout_dest,
+                        stderr=stderr_dest,
+                        start_new_session=True
                     )
                     logger.info(f"容器已在后台启动，PID: {process.pid}")
-                    # 后台运行时不清理临时目录，让进程继续使用
-                    logger.info(f"临时目录保留: {self.temp_dir}")
+                    if pid_file:
+                        try:
+                            with open(pid_file, 'w') as f:
+                                f.write(str(process.pid))
+                            logger.debug(f"PID {process.pid} saved to {pid_file}")
+                        except IOError as e:
+                            logger.error(f"无法写入PID文件 {pid_file}: {e}")
+                    
                     return True
                 except Exception as e:
                     logger.error(f"后台启动失败: {e}")
@@ -536,7 +573,8 @@ class ProotRunner:
                 # 前台运行
                 logger.info("进入容器环境...")
                 env = self._prepare_environment()
-                subprocess.run(proot_cmd, env=env)
+                # Also log foreground processes if log file is provided
+                subprocess.run(proot_cmd, env=env, stdout=log_file_handle, stderr=log_file_handle)
                 return True
 
         except KeyboardInterrupt:
@@ -546,7 +584,11 @@ class ProotRunner:
             logger.error(f"运行失败: {e}")
             return False
         finally:
-            # 只有在前台运行时才清理临时目录
+            # 关闭日志文件句柄
+            if log_file_handle:
+                log_file_handle.close()
+
+            # 只有在前台运行时，并且我们创建了临时目录时，才进行清理
             if not args.detach:
                 self._cleanup()
     
@@ -713,6 +755,20 @@ def main():
     )
 
     parser.add_argument(
+        '--rootfs-dir',
+        help='指定持久化的根文件系统路径 (主要由docker_cli.py在后台模式下使用)'
+    )
+    parser.add_argument(
+        '--pid-file',
+        help='在后台模式下保存真实PID的文件路径 (主要由docker_cli.py在后台模式下使用)'
+    )
+
+    parser.add_argument(
+        '--log-file',
+        help='在后台模式下保存容器内部stdout/stderr的文件路径 (主要由docker_cli.py使用)'
+    )
+    
+    parser.add_argument(
         '--list-cache',
         action='store_true',
         help='列出缓存的镜像'
@@ -748,8 +804,8 @@ def main():
     if not args.image_or_rootfs:
         parser.error("请提供Docker镜像URL或根文件系统路径")
 
-    # 运行容器
-    success = runner.run(args.image_or_rootfs, args)
+    # Run container
+    success = runner.run(args.image_or_rootfs, args, rootfs_dir=args.rootfs_dir, pid_file=args.pid_file)
 
     sys.exit(0 if success else 1)
 

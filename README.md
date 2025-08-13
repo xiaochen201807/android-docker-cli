@@ -2,12 +2,23 @@
 
 English | [中文](README_ZH.md)
 
-Run Docker images on Android Termux without Docker engine.
+A tool to run Docker images on Android/Termux using `proot`, without needing a Docker engine. This project provides a Docker-like command-line interface to manage persistent containers.
 
 ## Core Features
 
-- **`create_rootfs_tar.py`** - Download Docker images and convert to rootfs tar packages
-- **`proot_runner.py`** - Run containers with proot, supports direct image URL execution (one-stop service)
+- **`docker_cli.py`** - The main entry point. A Docker-style CLI for full container lifecycle management.
+- **Persistent Containers**: Containers have a persistent filesystem and can be started, stopped, and restarted.
+- **Underlying Engine**: Uses `proot_runner.py` to execute containers and `create_rootfs_tar.py` to download and prepare container images.
+
+## Installation
+
+You can install this tool with a single command:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/jinhan1414/android-docker-cli/main/install.sh | sh
+```
+
+This will create an executable `docker` command in your path. After installation, you can run the tool by simply typing `docker`.
 
 ## Install Dependencies
 
@@ -21,54 +32,54 @@ sudo apt install python3 proot curl tar
 
 ## Quick Start
 
-### Direct Image Execution (Recommended)
+After installation, you can use this tool just like the standard Docker command line.
+
 ```bash
-# Run Alpine Linux
-python proot_runner.py swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:latest
+# Pull an image
+docker pull alpine:latest
 
-# Run nginx (background)
-python proot_runner.py -d nginx:alpine
+# Run a container in the foreground
+docker run alpine:latest echo "Hello from container"
 
-# With environment variables and mounts
-python proot_runner.py -e "API_KEY=sk-12345" -b /host/data:/data alpine:latest
-```
+# Run a container in the background (detached)
+docker run -d -e "API_KEY=sk-12345" --volume /sdcard:/data nginx:alpine
 
-### Step-by-Step Operation
-```bash
-# 1. Download image
-python create_rootfs_tar.py alpine:latest
+# List running containers
+docker ps
 
-# 2. Run container
-python proot_runner.py rootfs.tar.gz
+# List all containers (including stopped)
+docker ps -a
+
+# View container logs
+docker logs <container_id>
+docker logs -f <container_id>  # Follow logs
+
+# Stop a container
+docker stop <container_id>
+
+# Start a stopped container
+docker start <container_id>
+
+# Restart a container
+docker restart <container_id>
+
+# Remove a container
+docker rm <container_id>
+
+# List cached images
+docker images
+
+# Remove a cached image
+docker rmi alpine:latest
 ```
 
 ## Key Features
 
-- ✅ **Zero External Dependencies**: Only requires curl, tar and Python standard library
-- ✅ **One-Stop Service**: Direct image URL execution with auto-download and caching
-- ✅ **Docker-Style CLI**: Familiar `-e`, `-b`, `-w`, `-d` parameters
-- ✅ **Multi-Architecture**: ARM64, AMD64, etc.
-- ✅ **Android Optimized**: Specially optimized for Termux environment
-
-## Common Parameters
-
-### create_rootfs_tar.py
-```bash
-python create_rootfs_tar.py [IMAGE_URL] [-o OUTPUT_FILE] [-v]
-```
-
-### proot_runner.py
-```bash
-python proot_runner.py [OPTIONS] IMAGE_URL_OR_TAR [COMMAND]
-
--e KEY=VALUE    Set environment variable
--b HOST:CONTAINER  Bind mount
--w DIR          Working directory
--d              Run in background
--v              Verbose logging
---list-cache    List cached images
---clear-cache   Clear cache
-```
+- ✅ **Full Container Lifecycle**: `run`, `ps`, `stop`, `start`, `restart`, `logs`, `rm`.
+- ✅ **Docker-Style CLI**: A familiar and intuitive command-line interface.
+- ✅ **Persistent Storage**: Containers maintain their state and filesystem across restarts, stored in `~/.docker_proot_cache/`.
+- ✅ **Zero External Python Dependencies**: Only requires `curl`, `tar`, and Python standard library.
+- ✅ **Android Optimized**: Specially optimized for the Termux environment.
 
 ## Troubleshooting
 
@@ -76,18 +87,15 @@ python proot_runner.py [OPTIONS] IMAGE_URL_OR_TAR [COMMAND]
 # Check dependencies
 curl --version && tar --version && proot --version
 
-# Verbose logging
-python proot_runner.py -v alpine:latest
-
-# Clear cache and retry
-python proot_runner.py --clear-cache all
+# Use verbose logging for more details
+docker --verbose run alpine:latest
 ```
 
 ## Limitations
 
-- Based on proot, not full containerization (no process/network isolation)
-- Some system calls may not be supported
-- Performance is lower compared to native Docker
+- Based on `proot`, not full containerization (no kernel-level process or network isolation).
+- Some system calls may not be supported.
+- Performance is lower compared to native Docker.
 
 ## License
 
