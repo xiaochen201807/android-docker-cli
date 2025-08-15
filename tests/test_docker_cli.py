@@ -120,5 +120,28 @@ class TestDockerCLI(unittest.TestCase):
         result = self._run_command(["images"])
         self.assertNotIn(self.TEST_IMAGE, result.stdout)
 
+    def test_08_run_with_env_vars_after_image(self):
+        """测试在镜像名称后传递环境变量"""
+        test_env_var = "MY_TEST_VAR"
+        test_env_val = "hello_world"
+        
+        # The command to run inside the container
+        # We use `env` to print all environment variables
+        command_in_container = ["env"]
+        
+        # Construct the full command for docker_cli
+        cli_command = [
+            "run",
+            self.TEST_IMAGE,
+            "-e", f"{test_env_var}={test_env_val}",
+        ]
+        cli_command.extend(command_in_container)
+
+        result = self._run_command(cli_command)
+        
+        # Check if the environment variable is present in the output
+        expected_output = f"{test_env_var}={test_env_val}"
+        self.assertIn(expected_output, result.stdout)
+
 if __name__ == '__main__':
     unittest.main()

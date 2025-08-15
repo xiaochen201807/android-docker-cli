@@ -819,7 +819,7 @@ def create_parser():
     run_parser = subparsers.add_parser('run', help='运行容器')
     run_parser.add_argument('image', help='镜像URL')
     run_parser.add_argument('--name', help='为容器指定一个名称')
-    run_parser.add_argument('command', nargs=argparse.REMAINDER, help='要执行的命令')
+    run_parser.add_argument('command', nargs='*', help='要执行的命令')
     run_parser.add_argument('-d', '--detach', action='store_true', help='后台运行')
     run_parser.add_argument('-it', '--interactive-tty', action='store_true', help='交互式运行容器 (分配伪TTY并保持stdin打开)')
     run_parser.add_argument('-e', '--env', action='append', default=[], help='环境变量 (KEY=VALUE)')
@@ -875,7 +875,18 @@ def create_parser():
 def main():
     """主函数"""
     parser = create_parser()
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
+
+    # Handle the command part for 'run' and 'exec'
+    if args.subcommand in ['run', 'exec']:
+        # Combine the command parts that argparse might have split.
+        # `args.command` will have any command parts found before an unknown option.
+        # `unknown` will have any arguments that were not recognized.
+        # For `run` and `exec`, these are part of the command to be executed.
+        args.command.extend(unknown)
+    elif unknown:
+        # For other subcommands, unknown arguments are an error.
+        parser.error(f"unrecognized arguments: {' '.join(unknown)}")
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
