@@ -107,9 +107,9 @@ class DockerCLI:
             logger.error(f"✗ 镜像拉取失败: {image_url}")
             return False
             
-    def run(self, image_url, command=None, **kwargs):
+    def run(self, image_url, command=None, name=None, **kwargs):
         """运行容器"""
-        container_id = self._generate_container_id()
+        container_id = name if name else self._generate_container_id()
         container_dir = self._get_container_dir(container_id)
         os.makedirs(container_dir, exist_ok=True)
         
@@ -123,6 +123,8 @@ class DockerCLI:
                 self.interactive = kwargs.get('interactive', False)
                 self.force_download = kwargs.get('force_download', False)
                 self.command = command
+                if self.command and self.command[0] == '--':
+                    self.command = self.command[1:]
                 
         args = Args()
         
@@ -131,6 +133,7 @@ class DockerCLI:
         container_info = {
             'id': container_id,
             'image': image_url,
+            'name': name,
             'command': command or [],
             'created': time.time(),
             'created_str': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -226,8 +229,10 @@ class DockerCLI:
             cmd.extend(['-b', b])
         
         # 添加镜像URL和命令
+        # 添加 -- 分隔符来区分 proot_runner.py 的参数和容器的命令
         cmd.append(image_url)
         if args.command:
+            cmd.append('--')
             cmd.extend(args.command)
 
         try:
@@ -612,7 +617,12 @@ class DockerCLI:
     def rmi(self, image_url):
         """删除镜像"""
         logger.info(f"删除镜像: {image_url}")
-        self.runner.clear_cache(image_url)
+        try:
+            self.runner.clear_cache(image_url)
+            return True
+        except Exception as e:
+            logger.error(f"删除镜像失败: {e}")
+            return False
         
     def stop(self, container_id):
         """停止容器"""
@@ -625,20 +635,36 @@ class DockerCLI:
         container_info = containers[container_id]
         pid = container_info.get('pid')
         
-        if not pid:
-            # 检查是否是旧模式的容器
-            if container_info.get('status') == 'exited':
-                 logger.info(f"容器 {container_id} 已经停止")
-                 return True
-            logger.error(f"容器 {container_id} 没有PID信息")
-            return False
-            
-        if not self._is_process_running(pid):
-            logger.info(f"容器 {container_id} 已经停止")
+        if pid and not self._is_process_running(pid):
+            logger.info(f"容器 {container_id} 进程已停止，更新状态为 'exited'")
             container_info['status'] = 'exited'
-            containers[container_id] = container_info
+            container_info['finished'] = time.time()
+            container_info['finished_str'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             self._save_containers(containers)
             return True
+
+        # 如果没有PID，或者PID对应的进程没有运行，并且容器状态不是运行中，则直接认为已停止
+        if not pid or not self._is_process_running(pid):
+            if container_info.get('status') in ['exited', 'killed', 'failed', 'created']:
+                logger.info(f"容器 {container_id} 已经停止或处于非运行状态 ({container_info.get('status')}).")
+                # 确保状态被正确更新，即使PID缺失
+                if container_info.get('status') != 'exited':
+                    container_info['status'] = 'exited'
+                    container_info['finished'] = time.time()
+                    container_info['finished_str'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    self._save_containers(containers)
+                return True
+            else:
+                logger.warning(f"容器 {container_id} 没有有效的PID信息或进程未运行，但状态为 {container_info.get('status')}. 尝试强制停止.")
+                # 对于那些状态异常（如'running'但无PID或进程），尝试强制清理
+                # 这部分逻辑需要非常小心，以避免误删数据
+                # 对于docker-compose down场景，如果stop失败，rm会接管清理工作
+                # 所以这里主要目的是让stop返回True，让rm可以继续执行
+                container_info['status'] = 'exited' # 强制标记为已退出，以便rm可以处理
+                container_info['finished'] = time.time()
+                container_info['finished_str'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                self._save_containers(containers)
+                return True
             
         try:
             # 发送SIGTERM信号到整个进程组
@@ -794,7 +820,8 @@ def create_parser():
     # run 命令
     run_parser = subparsers.add_parser('run', help='运行容器')
     run_parser.add_argument('image', help='镜像URL')
-    run_parser.add_argument('command', nargs='*', help='要执行的命令')
+    run_parser.add_argument('--name', help='为容器指定一个名称')
+    run_parser.add_argument('command', nargs=argparse.REMAINDER, help='要执行的命令')
     run_parser.add_argument('-d', '--detach', action='store_true', help='后台运行')
     run_parser.add_argument('-it', '--interactive-tty', action='store_true', help='交互式运行容器 (分配伪TTY并保持stdin打开)')
     run_parser.add_argument('-e', '--env', action='append', default=[], help='环境变量 (KEY=VALUE)')
@@ -872,6 +899,7 @@ def main():
             container_id = cli.run(
                 args.image,
                 command=args.command,
+                name=args.name,
                 env=args.env,
                 bind=args.bind,
                 workdir=args.workdir,

@@ -14,6 +14,7 @@ import tempfile
 import shutil
 import logging
 import hashlib
+import shlex
 import time
 from pathlib import Path
 
@@ -359,6 +360,11 @@ class ProotRunner:
         # 基本选项
         cmd.extend(['-r', self.rootfs_dir])
 
+        # 如果是后台运行，禁用TTY，并指定PID文件
+        if args.detach:
+            # This block is now empty as proot doesn't support pid file args
+            pass
+
         # 绑定挂载
         default_binds = [
             '/dev',
@@ -398,6 +404,10 @@ class ProotRunner:
             if '=' in env:
                 key, value = env.split('=', 1)
                 env_vars[key] = value
+
+        # 如果是后台运行，强制设置TERM为dumb，避免交互式行为
+        if args.detach:
+            env_vars['TERM'] = 'dumb'
 
         # proot不支持-E选项，需要通过其他方式设置环境变量
         # 我们将通过修改启动命令来设置环境变量
@@ -446,14 +456,17 @@ class ProotRunner:
         if self._is_android_environment():
             script_content.extend([
                 '# Android Termux 特殊处理',
-                'unset LD_PRELOAD',  # 取消termux-exec
-                'export TERM=${TERM:-xterm}',
-                'export HOME=${HOME:-/root}',
+                'unset LD_PRELOAD'  # 取消termux-exec
             ])
 
         # 添加执行命令
-        command_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in command)
-        script_content.append(f'exec {command_str}')
+        if len(command) >= 2 and command[0] == 'sh' and command[1] == '-c':
+            # 对于 'sh -c "command string"', 确保命令字符串被正确引用
+            quoted_command_str = shlex.quote(command[2])
+            script_content.append(f'exec {command[0]} {command[1]} {quoted_command_str}')
+        else:
+            command_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in command)
+            script_content.append(f'exec {command_str}')
 
         # 写入临时脚本文件
         script_path = os.path.join(self.rootfs_dir, 'startup.sh')
@@ -520,8 +533,16 @@ class ProotRunner:
 
             self.rootfs_dir = rootfs_dir
 
+            # 如果命令以'--'开头，则移除它
+            if args.command and args.command[0] == '--':
+                args.command = args.command[1:]
+
             # 查找镜像配置
             self._find_image_config()
+
+            # 如果是后台运行模式，强制设置为非交互式
+            if args.detach:
+                args.interactive = False
 
             # 构建proot命令
             proot_cmd = self._build_proot_command(args)
@@ -541,34 +562,49 @@ class ProotRunner:
 
             # 运行proot
             if args.detach:
-                # 后台运行
+                # 手动实现后台化 (fork/exec)
                 env = self._prepare_environment()
-                
-                stdout_dest = log_file_handle or subprocess.DEVNULL
-                stderr_dest = log_file_handle or subprocess.DEVNULL
+                pid_file_path = getattr(args, 'pid_file', None)
 
                 try:
-                    process = subprocess.Popen(
-                        proot_cmd,
-                        env=env,
-                        stdin=subprocess.DEVNULL,
-                        stdout=stdout_dest,
-                        stderr=stderr_dest,
-                        start_new_session=True
-                    )
-                    logger.info(f"容器已在后台启动，PID: {process.pid}")
-                    if pid_file:
-                        try:
-                            with open(pid_file, 'w') as f:
-                                f.write(str(process.pid))
-                            logger.debug(f"PID {process.pid} saved to {pid_file}")
-                        except IOError as e:
-                            logger.error(f"无法写入PID文件 {pid_file}: {e}")
+                    pid = os.fork()
+                    if pid > 0:
+                        # 父进程
+                        logger.info(f"容器已在后台启动，PID: {pid}")
+                        if pid_file_path:
+                            try:
+                                with open(pid_file_path, 'w') as f:
+                                    f.write(str(pid))
+                                logger.debug(f"PID {pid} 已写入 {pid_file_path}")
+                            except IOError as e:
+                                logger.error(f"写入PID文件失败: {e}")
+                        # 父进程成功写入PID后退出
+                        return True
+
+                    # 子进程
+                    os.setsid() # 创建新会话，脱离控制终端
                     
-                    return True
+                    # 重定向标准文件描述符
+                    sys.stdout.flush()
+                    sys.stderr.flush()
+                    
+                    stdout_dest = log_file_handle or open(os.devnull, 'wb')
+                    stderr_dest = log_file_handle or open(os.devnull, 'wb')
+                    
+                    os.dup2(stdout_dest.fileno(), sys.stdout.fileno())
+                    os.dup2(stderr_dest.fileno(), sys.stderr.fileno())
+                    
+                    # stdin重定向到/dev/null
+                    with open(os.devnull, 'rb') as devnull:
+                        os.dup2(devnull.fileno(), sys.stdin.fileno())
+
+                    # 执行proot命令
+                    os.execvpe(proot_cmd[0], proot_cmd, env)
+
                 except Exception as e:
-                    logger.error(f"后台启动失败: {e}")
-                    return False
+                    logger.error(f"后台启动失败 (fork/exec): {e}")
+                    # 子进程如果exec失败，需要手动退出
+                    sys.exit(1)
             else:
                 # 前台运行（交互式或非交互式）
                 logger.info("进入容器环境...")

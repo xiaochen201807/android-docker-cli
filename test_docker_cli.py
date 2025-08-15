@@ -1,0 +1,123 @@
+import unittest
+import os
+import sys
+import subprocess
+import shutil
+import time
+import json
+
+class TestDockerCLI(unittest.TestCase):
+    """
+    对 docker_cli.py 和相关脚本进行集成测试。
+    """
+    TEST_IMAGE = "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:latest"
+    TEST_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".docker_proot_cache_test")
+    DOCKER_CLI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'docker_cli.py')
+
+    @classmethod
+    def setUpClass(cls):
+        """在所有测试开始前，清理并创建测试缓存目录。"""
+        if os.path.exists(cls.TEST_CACHE_DIR):
+            shutil.rmtree(cls.TEST_CACHE_DIR)
+        os.makedirs(cls.TEST_CACHE_DIR)
+
+    @classmethod
+    def tearDownClass(cls):
+        """在所有测试结束后，清理测试缓存目录。"""
+        if os.path.exists(cls.TEST_CACHE_DIR):
+            shutil.rmtree(cls.TEST_CACHE_DIR)
+
+    def _run_command(self, command, expect_success=True):
+        """执行 docker_cli.py 命令并返回结果。"""
+        cmd = [sys.executable, self.DOCKER_CLI_PATH, "--cache-dir", self.TEST_CACHE_DIR] + command
+        print(f"\nExecuting: {' '.join(cmd)}")
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        
+        if expect_success:
+            self.assertEqual(result.returncode, 0, f"命令执行失败: {result.stdout}")
+        else:
+            self.assertNotEqual(result.returncode, 0, "命令预期失败但成功了。")
+            
+        return result
+
+    def test_01_pull_image(self):
+        """测试 docker pull"""
+        result = self._run_command(["pull", self.TEST_IMAGE])
+        self.assertIn("镜像拉取成功", result.stdout)
+
+    def test_02_images_list(self):
+        """测试 docker images"""
+        result = self._run_command(["images"])
+        self.assertIn(self.TEST_IMAGE, result.stdout)
+
+    def test_03_run_foreground(self):
+        """测试 docker run (前台)"""
+        test_string = "Hello from test"
+        result = self._run_command(["run", self.TEST_IMAGE, "echo", test_string])
+        self.assertIn(test_string, result.stdout)
+
+    def test_04_run_detached_and_ps(self):
+        """测试 docker run -d 和 docker ps"""
+        container_name = "test-detached"
+        self._run_command(["run", "-d", "--name", container_name, self.TEST_IMAGE, "sleep", "10"])
+        
+        result = self._run_command(["ps"])
+        self.assertIn(container_name, result.stdout)
+        self.assertIn("running", result.stdout)
+
+        # 清理
+        self._run_command(["stop", container_name])
+        self._run_command(["rm", container_name])
+
+    def test_05_lifecycle_stop_start_rm(self):
+        """测试 docker stop, start, rm"""
+        container_name = "test-lifecycle"
+        self._run_command(["run", "-d", "--name", container_name, self.TEST_IMAGE, "sleep", "10"])
+
+        # Stop
+        self._run_command(["stop", container_name])
+        result = self._run_command(["ps", "-a"])
+        self.assertIn(container_name, result.stdout)
+        self.assertIn("exited", result.stdout)
+
+        # Start
+        self._run_command(["start", container_name])
+        result = self._run_command(["ps"])
+        self.assertIn(container_name, result.stdout)
+        self.assertIn("running", result.stdout)
+
+        # RM
+        self._run_command(["stop", container_name]) # Must be stopped to be removed without force
+        self._run_command(["rm", container_name])
+        result = self._run_command(["ps", "-a"])
+        self.assertNotIn(container_name, result.stdout)
+
+    def test_06_logs(self):
+        """测试 docker logs"""
+        container_name = "test-logs"
+        log_line_1 = "log line 1"
+        log_line_2 = "log line 2"
+        self._run_command(["run", "-d", "--name", container_name, self.TEST_IMAGE, "sh", "-c", f"echo {log_line_1}; sleep 1; echo {log_line_2}"])
+        
+        time.sleep(2) # 等待容器产生日志
+
+        result = self._run_command(["logs", container_name])
+        self.assertIn(log_line_1, result.stdout)
+        self.assertIn(log_line_2, result.stdout)
+
+        # 清理
+        self._run_command(["rm", "-f", container_name])
+
+    def test_07_rmi(self):
+        """测试 docker rmi"""
+        # 确保没有容器正在使用该镜像
+        result = self._run_command(["ps", "-a"])
+        if self.TEST_IMAGE in result.stdout:
+            print("警告: 在 rmi 测试前发现有残留容器，可能导致测试失败。")
+
+        self._run_command(["rmi", self.TEST_IMAGE])
+        result = self._run_command(["images"])
+        self.assertNotIn(self.TEST_IMAGE, result.stdout)
+
+if __name__ == '__main__':
+    unittest.main()

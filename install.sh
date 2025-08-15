@@ -7,6 +7,8 @@ GITHUB_REPO="https://github.com/jinhan1414/android-docker-cli"
 INSTALL_DIR="$HOME/.android-docker-cli"
 CMD_NAME="docker"
 CMD_PATH="$PREFIX/bin/$CMD_NAME"
+DOCKER_COMPOSE_CMD_NAME="docker-compose"
+DOCKER_COMPOSE_CMD_PATH="$PREFIX/bin/$DOCKER_COMPOSE_CMD_NAME"
 
 # --- Helper Functions ---
 echo_info() {
@@ -44,7 +46,18 @@ if [ $? -ne 0 ]; then
 fi
 echo_info "✓ Repository cloned successfully."
 
-# 4. Create the Wrapper Script
+# 4. Install Python Dependencies
+echo_info "Installing Python dependencies..."
+if command -v pip >/dev/null 2>&1; then
+    pip install PyYAML
+elif command -v pip3 >/dev/null 2>&1; then
+    pip3 install PyYAML
+else
+    echo_error "pip or pip3 is not installed. Please install it (e.g., 'pkg install python-pip' in Termux) and run this script again."
+fi
+echo_info "✓ Python dependencies installed."
+
+# 5. Create the Wrapper Script
 echo_info "Creating command wrapper at $CMD_PATH..."
 cat > "$CMD_PATH" << EOF
 #!/data/data/com.termux/files/usr/bin/sh
@@ -72,16 +85,33 @@ if [ $? -ne 0 ]; then
     echo_error "Failed to create the wrapper script. Please check permissions for $PREFIX/bin."
 fi
 
-# 5. Make the Wrapper Executable
+# 6. Make the Wrapper Executable
 chmod +x "$CMD_PATH"
 if [ $? -ne 0 ]; then
     echo_error "Failed to make the command executable. Please check permissions."
 fi
 echo_info "✓ Command wrapper created and made executable."
 
-# 6. Final Success Message
+# 7. Create docker-compose Wrapper
+echo_info "Creating command wrapper at $DOCKER_COMPOSE_CMD_PATH..."
+cat > "$DOCKER_COMPOSE_CMD_PATH" << EOF
+#!/data/data/com.termux/files/usr/bin/sh
+# Wrapper for docker_compose_cli.py
+INSTALL_DIR="$INSTALL_DIR"
+PYTHON_SCRIPT="\$INSTALL_DIR/docker_compose_cli.py"
+if [ ! -f "\$PYTHON_SCRIPT" ]; then
+    echo "Error: The main script was not found at \$PYTHON_SCRIPT" >&2
+    exit 1
+fi
+exec python "\$PYTHON_SCRIPT" "\$@"
+EOF
+chmod +x "$DOCKER_COMPOSE_CMD_PATH"
+echo_info "✓ docker-compose command wrapper created."
+
+# 8. Final Success Message
 echo_info "-------------------------------------------------"
 echo_info "  Installation successful!"
 echo_info "  You can now run the tool by typing: docker"
+echo_info "  And manage services with: docker-compose"
 echo_info "  Example: docker run alpine:latest echo 'Hello'"
 echo_info "-------------------------------------------------"

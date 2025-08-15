@@ -1,0 +1,10 @@
+version: '1.0'
+services:
+  app:
+    image: "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:latest"
+    container_name: "compose-test-app"
+    command: "sh -c 'echo App started && sleep 300'"
+  db:
+    image: "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:latest"
+    container_name: "compose-test-db"
+    command: "sh -c 'echo DB started && sleep 300'"

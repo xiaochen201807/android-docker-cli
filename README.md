@@ -83,12 +83,40 @@ docker images
 docker rmi alpine:latest
 ```
 
+## Docker Compose Support
+
+This tool includes a `docker-compose` command to manage multi-container applications.
+
+```bash
+# Start services defined in docker-compose.yml
+docker-compose up
+
+# Run in detached mode
+docker-compose up -d
+
+# Stop and remove services
+docker-compose down
+```
+
+### Sample `docker-compose.yml`
+
+```yaml
+version: '3'
+services:
+  web:
+    image: nginx:alpine
+    container_name: my-web-server
+  db:
+    image: redis:alpine
+    container_name: my-redis-db
+```
+
 ## Key Features
 
 - ✅ **Full Container Lifecycle**: `run`, `ps`, `stop`, `start`, `restart`, `logs`, `rm`, `attach`, `exec`.
+- ✅ **Docker Compose Support**: Manage multi-container setups with `docker-compose up` and `down`.
 - ✅ **Docker-Style CLI**: A familiar and intuitive command-line interface.
 - ✅ **Persistent Storage**: Containers maintain their state and filesystem across restarts, stored in `~/.docker_proot_cache/`.
-- ✅ **Zero External Python Dependencies**: Only requires `curl`, `tar`, and Python standard library.
 - ✅ **Android Optimized**: Specially optimized for the Termux environment.
 
 ## Troubleshooting

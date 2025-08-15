@@ -83,12 +83,40 @@ docker images
 docker rmi alpine:latest
 ```
 
+## Docker Compose 支持
+
+此工具包含一个 `docker-compose` 命令，用于管理多容器应用。
+
+```bash
+# 启动 docker-compose.yml 中定义的服务
+docker-compose up
+
+# 在后台运行
+docker-compose up -d
+
+# 停止并移除服务
+docker-compose down
+```
+
+### `docker-compose.yml` 示例
+
+```yaml
+version: '3'
+services:
+  web:
+    image: nginx:alpine
+    container_name: my-web-server
+  db:
+    image: redis:alpine
+    container_name: my-redis-db
+```
+
 ## 主要特性
 
 - ✅ **完整的容器生命周期**: `run`, `ps`, `stop`, `start`, `restart`, `logs`, `rm`, `attach`, `exec`。
+- ✅ **Docker Compose 支持**: 使用 `docker-compose up` 和 `down` 管理多容器配置。
 - ✅ **Docker风格CLI**: 熟悉且直观的命令行界面。
 - ✅ **持久化存储**: 容器在重启后能保持其状态和文件系统，存储于 `~/.docker_proot_cache/`。
-- ✅ **零Python外部依赖**: 仅需要 `curl`、`tar` 和 Python 标准库。
 - ✅ **Android优化**: 针对 Termux 环境进行了特别优化。
 
 ## 故障排除

@@ -1,0 +1,10 @@
+version: '1.0'
+services:
+  test-app:
+    image: "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:latest"
+    container_name: "my-test-app"
+    command: "sh -c 'echo Test app started && sleep 5000'"
+  test-db:
+    image: "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:latest"
+    container_name: "my-test-db"
+    command: "sh -c 'echo Test db started && sleep 5000'"
