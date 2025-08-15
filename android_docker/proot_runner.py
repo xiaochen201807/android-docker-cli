@@ -104,10 +104,9 @@ class ProotRunner:
         logger.info(f"下载镜像: {image_url}")
 
         # 调用create_rootfs_tar.py脚本
-        script_path = os.path.join(os.path.dirname(__file__), 'create_rootfs_tar.py')
         cmd = [
-            sys.executable,  # 使用当前Python解释器
-            script_path,
+            sys.executable,
+            '-m', 'android_docker.create_rootfs_tar',
             '-o', cache_path,
             image_url
         ]
@@ -174,13 +173,9 @@ class ProotRunner:
             return False
 
         # 检查create_rootfs_tar.py脚本
-        script_path = os.path.join(os.path.dirname(__file__), 'create_rootfs_tar.py')
-        if not os.path.exists(script_path):
-            logger.error("✗ create_rootfs_tar.py 脚本未找到")
-            logger.info("请确保create_rootfs_tar.py与此脚本在同一目录")
-            return False
-        else:
-            logger.info("✓ create_rootfs_tar.py 脚本可用")
+        # Since we are using `python -m`, we don't need to check for the script path here.
+        # The python interpreter will find the module.
+        logger.info("✓ create_rootfs_tar.py module is available")
 
         # 检查curl（create_rootfs_tar.py需要）
         try:

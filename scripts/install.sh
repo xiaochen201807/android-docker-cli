@@ -69,7 +69,7 @@ cat > "$CMD_PATH" << EOF
 INSTALL_DIR="$INSTALL_DIR"
 
 # Path to the main python script
-PYTHON_SCRIPT="\$INSTALL_DIR/docker_cli.py"
+PYTHON_SCRIPT="\$INSTALL_DIR/android_docker/docker_cli.py"
 
 # Check if the main script exists
 if [ ! -f "\$PYTHON_SCRIPT" ]; then
@@ -79,7 +79,7 @@ if [ ! -f "\$PYTHON_SCRIPT" ]; then
 fi
 
 # Execute the python script with all passed arguments
-exec python "\$PYTHON_SCRIPT" "\$@"
+exec env PYTHONPATH="\$INSTALL_DIR" python -m android_docker.docker_cli "\$@"
 EOF
 if [ $? -ne 0 ]; then
     echo_error "Failed to create the wrapper script. Please check permissions for $PREFIX/bin."
@@ -98,12 +98,12 @@ cat > "$DOCKER_COMPOSE_CMD_PATH" << EOF
 #!/data/data/com.termux/files/usr/bin/sh
 # Wrapper for docker_compose_cli.py
 INSTALL_DIR="$INSTALL_DIR"
-PYTHON_SCRIPT="\$INSTALL_DIR/docker_compose_cli.py"
+PYTHON_SCRIPT="\$INSTALL_DIR/android_docker/docker_compose_cli.py"
 if [ ! -f "\$PYTHON_SCRIPT" ]; then
     echo "Error: The main script was not found at \$PYTHON_SCRIPT" >&2
     exit 1
 fi
-exec python "\$PYTHON_SCRIPT" "\$@"
+exec env PYTHONPATH="\$INSTALL_DIR" python -m android_docker.docker_compose_cli "\$@"
 EOF
 chmod +x "$DOCKER_COMPOSE_CMD_PATH"
 echo_info "✓ docker-compose command wrapper created."

@@ -13,12 +13,12 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# 获取当前脚本的目录
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DOCKER_CLI_PATH = os.path.join(SCRIPT_DIR, 'docker_cli_wrapper.py')
-
-def run_docker_cli_command(command, args, detach=False):
-    cmd = [sys.executable, DOCKER_CLI_PATH, command] + args
+def run_docker_cli_command(command, args, cache_dir=None, detach=False):
+    # 直接通过模块化方式调用 docker_cli
+    base_cmd = [sys.executable, '-m', 'android_docker.docker_cli']
+    if cache_dir:
+        base_cmd.extend(['--cache-dir', cache_dir])
+    cmd = base_cmd + [command] + args
     logger.info(f"Executing: {' '.join(cmd)}")
     try:
         if detach:
@@ -59,6 +59,7 @@ def cmd_up(args):
         run_docker_cli_command(
             'run',
             (['-d'] if args.detach else []) + ['--name', container_name, image] + (['--'] + shlex.split(command) if command else []),
+            cache_dir=args.cache_dir,
             detach=args.detach
         )
         time.sleep(1) # Add a short delay to avoid race conditions
@@ -75,9 +76,9 @@ def cmd_down(args):
     for service_name, service_config in compose_config['services'].items():
         container_name = service_config.get('container_name', f"{project_name}-{service_name}")
         logger.info(f"Stopping service: {service_name} (Container: {container_name})")
-        run_docker_cli_command('stop', [container_name])
+        run_docker_cli_command('stop', [container_name], cache_dir=args.cache_dir)
         logger.info(f"Removing service: {service_name} (Container: {container_name})")
-        run_docker_cli_command('rm', [container_name])
+        run_docker_cli_command('rm', [container_name], cache_dir=args.cache_dir)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -88,7 +89,11 @@ def main():
         default='docker-compose.yml',
         help='Specify an alternate compose file (default: docker-compose.yml)'
     )
-
+    parser.add_argument(
+        '--cache-dir',
+        help='指定docker cli使用的缓存目录'
+    )
+ 
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     up_parser = subparsers.add_parser('up', help='Create and start containers')

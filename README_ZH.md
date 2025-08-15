@@ -6,16 +6,17 @@
 
 ## 核心功能
 
-- **`docker_cli.py`** - 主要入口点。一个用于完整容器生命周期管理的 Docker 风格 CLI。
+- **模块化代码**: 所有核心逻辑都被组织在 `android_docker` 包中。
+- **主命令行界面**: 主要入口点是 `android_docker/docker_cli.py`，提供一个用于完整容器生命周期管理的 Docker 风格 CLI。
 - **持久化容器**: 容器拥有持久化的文件系统，可以被启动、停止和重启。
-- **底层引擎**: 使用 `proot_runner.py` 来执行容器，使用 `create_rootfs_tar.py` 来下载和准备容器镜像。
+- **底层引擎**: 使用 `android_docker/proot_runner.py` 来执行容器，使用 `android_docker/create_rootfs_tar.py` 来下载和准备容器镜像。
 
 ## 安装
 
 您可以使用一行命令来安装此工具：
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/jinhan1414/android-docker-cli/main/install.sh | sh
+curl -sSL https://raw.githubusercontent.com/jinhan1414/android-docker-cli/main/scripts/install.sh | sh
 ```
 
 这将会创建一个名为 `docker` 的可执行命令到您的系统路径中。安装后，您只需输入 `docker` 即可运行此工具。

@@ -12,7 +12,7 @@ class TestDockerCLI(unittest.TestCase):
     """
     TEST_IMAGE = "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:latest"
     TEST_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".docker_proot_cache_test")
-    DOCKER_CLI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'docker_cli.py')
+    # We will now run the CLI as a module, so this path is no longer needed.
 
     @classmethod
     def setUpClass(cls):
@@ -29,7 +29,8 @@ class TestDockerCLI(unittest.TestCase):
 
     def _run_command(self, command, expect_success=True):
         """执行 docker_cli.py 命令并返回结果。"""
-        cmd = [sys.executable, self.DOCKER_CLI_PATH, "--cache-dir", self.TEST_CACHE_DIR] + command
+        # Run as a module to ensure correct package imports
+        cmd = [sys.executable, "-m", "android_docker.docker_cli", "--cache-dir", self.TEST_CACHE_DIR] + command
         print(f"\nExecuting: {' '.join(cmd)}")
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         

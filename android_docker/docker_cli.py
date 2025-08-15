@@ -17,8 +17,8 @@ from pathlib import Path
 from datetime import datetime
 
 # 导入现有模块
-from proot_runner import ProotRunner
-from create_rootfs_tar import DockerImageToRootFS
+from .proot_runner import ProotRunner
+from .create_rootfs_tar import DockerImageToRootFS
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -205,14 +205,12 @@ class DockerCLI:
         log_file = self._get_log_file(container_dir)
 
         # 构建proot_runner.py的命令行参数
-        proot_runner_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'proot_runner.py')
-        
         cmd = [
             sys.executable,
-            proot_runner_script,
+            '-m', 'android_docker.proot_runner',
             '--rootfs-dir', rootfs_dir,
             '--pid-file', pid_file,
-            '--log-file', log_file, # <-- Add this line
+            '--log-file', log_file,
             '--detach',
         ]
 

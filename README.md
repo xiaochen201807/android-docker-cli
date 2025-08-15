@@ -6,16 +6,17 @@ A tool to run Docker images on Android using `proot`, without needing a Docker e
 
 ## Core Features
 
-- **`docker_cli.py`** - The main entry point. A Docker-style CLI for full container lifecycle management.
+- **Modular Codebase**: All core logic is organized within the `android_docker` package.
+- **Main CLI**: The main entry point is `android_docker/docker_cli.py`, providing a Docker-style CLI for full container lifecycle management.
 - **Persistent Containers**: Containers have a persistent filesystem and can be started, stopped, and restarted.
-- **Underlying Engine**: Uses `proot_runner.py` to execute containers and `create_rootfs_tar.py` to download and prepare container images.
+- **Underlying Engine**: Uses `android_docker/proot_runner.py` to execute containers and `android_docker/create_rootfs_tar.py` to download and prepare container images.
 
 ## Installation
 
 You can install this tool with a single command:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/jinhan1414/android-docker-cli/main/install.sh | sh
+curl -sSL https://raw.githubusercontent.com/jinhan1414/android-docker-cli/main/scripts/install.sh | sh
 ```
 
 This will create an executable `docker` command in your path. After installation, you can run the tool by simply typing `docker`.
