@@ -195,6 +195,11 @@ class DockerCLI:
             def __init__(self):
                 self.env = kwargs.get('env', [])
                 self.bind = kwargs.get('bind', [])
+                for v in self.bind:
+                    host_path = v.split(':')[0]
+                    if not os.path.exists(host_path):
+                        # 仅记录警告，而不是中止，因为某些路径可能在容器启动后才可用
+                        logger.warning(f"卷挂载的源路径不存在: {host_path}")
                 self.workdir = kwargs.get('workdir')
                 self.detach = kwargs.get('detach', False)
                 self.interactive = kwargs.get('interactive', False)
@@ -333,14 +338,20 @@ class DockerCLI:
             
             # 等待pid文件被创建，最多等待5秒
             pid = None
-            for _ in range(10):
+            # 延长等待时间至15秒 (30 * 0.5s)
+            for i in range(30):
                 time.sleep(0.5)
                 if os.path.exists(pid_file):
                     with open(pid_file, 'r') as pf:
                         pid_str = pf.read().strip()
                         if pid_str:
-                            pid = int(pid_str)
-                            break
+                            try:
+                                pid = int(pid_str)
+                                logger.debug(f"成功从PID文件获取PID: {pid}")
+                                break
+                            except ValueError:
+                                logger.debug(f"PID文件内容无效: '{pid_str}'，继续等待...")
+                logger.debug(f"等待PID文件... (尝试 {i+1}/30)")
             
             if not pid:
                 logger.error("无法获取后台进程的PID，启动可能失败。")

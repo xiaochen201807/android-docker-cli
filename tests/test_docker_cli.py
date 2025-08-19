@@ -143,5 +143,51 @@ class TestDockerCLI(unittest.TestCase):
         expected_output = f"{test_env_var}={test_env_val}"
         self.assertIn(expected_output, result.stdout)
 
+    def test_09_run_with_volume_mount(self):
+        """测试 docker run -v (volume mount)"""
+        container_name = "my-nginx"
+        nginx_image = "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/nginx:alpine"
+        
+        # 首先拉取 nginx 镜像
+        self._run_command(["pull", nginx_image])
+
+        # 创建一个本地的 nginx.conf 文件给测试使用
+        local_conf_path = os.path.join(self.TEST_CACHE_DIR, "nginx.conf")
+        with open(local_conf_path, "w") as f:
+            # 使用一个高位端口避免权限问题和端口冲突
+            f.write("events {} http { server { listen 8088; server_name localhost; location / { return 200 'volume test ok'; } } }")
+
+        # 准备 run 命令
+        # 注意: 我们不能在 python 中直接使用 $(pwd), 需要用 os.getcwd() 替代
+        volume_map = f"{local_conf_path}:/etc/nginx/nginx.conf"
+        
+        run_command = [
+            "run", "-d",
+            "--name", container_name,
+            "-v", volume_map,
+            nginx_image
+        ]
+        
+        self._run_command(run_command)
+
+        # 检查容器是否在运行
+        result = self._run_command(["ps"])
+        self.assertIn(container_name, result.stdout)
+        self.assertIn("running", result.stdout)
+
+        # 等待 nginx 启动
+        time.sleep(3)
+
+        # 检查日志，确认 nginx 是否因为我们的配置而正常启动
+        # Nginx 默认不会输出太多日志，但如果配置错误，这里会有错误信息
+        log_result = self._run_command(["logs", container_name])
+        self.assertNotIn("nginx: [emerg]", log_result.stdout, "Nginx 配置文件似乎导致了启动错误")
+
+        # 清理
+        self._run_command(["stop", container_name])
+        self._run_command(["rm", container_name])
+        self._run_command(["rmi", nginx_image])
+
+
 if __name__ == '__main__':
     unittest.main()
