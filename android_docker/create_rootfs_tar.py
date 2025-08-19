@@ -36,20 +36,28 @@ class DockerRegistryClient:
         self.username = username
         self.password = password
 
-    def _run_curl_command(self, cmd):
-        """执行curl命令（最终简化版）"""
-        # 总是添加 --insecure, -s, -L
-        final_cmd = ['curl', '-s', '-L', '--insecure']
-        # 添加除了 'curl' 之外的所有原始参数
-        final_cmd.extend(cmd[1:])
+    def _run_curl_command(self, cmd, print_cmd=True):
+        """执行并打印curl命令"""
+        if print_cmd:
+            # 为了安全，打印命令时隐藏密码
+            safe_cmd = []
+            i = 0
+            while i < len(cmd):
+                safe_cmd.append(cmd[i])
+                if cmd[i] == '-u' and i + 1 < len(cmd):
+                    safe_cmd.append(f"{cmd[i+1].split(':')[0]}:***")
+                    i += 1
+                i += 1
+            logger.info(f"---\n[ 执行命令 ]\n{' '.join(safe_cmd)}\n---")
         
         try:
-            result = subprocess.run(final_cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             return result
         except subprocess.CalledProcessError as e:
-            logger.error(f"curl命令执行失败 (错误码: {e.returncode})")
-            logger.error(f"您可以手动运行以下命令进行测试:\n{' '.join(final_cmd)}")
-            logger.error(f"错误输出: {e.stderr}")
+            logger.error(f"!!! curl命令执行失败 (错误码: {e.returncode}) !!!")
+            logger.error(f"""---
+[ 错误输出 ]
+---\n{e.stderr.strip()}""")
             raise
 
     def _get_auth_token(self, www_authenticate_header):
@@ -81,11 +89,16 @@ class DockerRegistryClient:
 
                 # 使用curl获取token
                 try:
-                    cmd = ['curl'] # 第一个元素会被_run_curl_command忽略
+                    cmd = ['curl', '-s'] # Token获取不需要-i
                     if self.username and self.password:
                         cmd.extend(['-u', f'{self.username}:{self.password}'])
                     cmd.extend(['-H', f'User-Agent: {self.user_agent}', auth_url])
                     
+                    # 为了简单起见，我们直接调用，不再通过_run_curl_command
+                    # 因为代理已经通过环境变量设置
+                    logger.info("""---
+[ 步骤 2/3: 获取认证Token ]
+---""")
                     result = self._run_curl_command(cmd)
                     token_data = json.loads(result.stdout)
                     return token_data.get('token')
@@ -99,28 +112,51 @@ class DockerRegistryClient:
         return None
 
     def _make_registry_request(self, path, headers=None, output_file=None):
-        """向registry发送请求，处理认证（最终简化版）"""
+        """向registry发送请求，处理认证"""
+        # 步骤1：先发一个请求获取认证头
+        if not self.auth_token:
+            url = f"{self.registry_url}/v2/{path}"
+            cmd = ['curl', '-s', '-i', '--insecure', url]
+            logger.info("""---
+[ 步骤 1/3: 探测认证服务器 ]
+---""")
+            result = self._run_curl_command(cmd)
+            
+            auth_header = None
+            for line in result.stdout.split('\n'):
+                if line.lower().startswith('www-authenticate:'):
+                    auth_header = line.split(':', 1)[1].strip()
+                    break
+            
+            if auth_header:
+                # 步骤2：使用认证头获取token
+                token = self._get_auth_token(auth_header)
+                if token:
+                    self.auth_token = token
+                    logger.info("✓ 成功获取认证Token")
+                else:
+                    logger.error("✗ 获取认证Token失败，将尝试匿名访问...")
+            else:
+                logger.warning("未找到 'Www-Authenticate' 头，尝试匿名请求...")
+
+        # 步骤3：使用token（或匿名）发送最终请求
         url = f"{self.registry_url}/v2/{path}"
+        cmd = ['curl', '-s', '-i', '--insecure', '-H', f'User-Agent: {self.user_agent}']
 
-        # 构建curl命令
-        cmd = ['curl', '-i', '-H', f'User-Agent: {self.user_agent}']
-
-        # 添加额外的headers
         if headers:
             for key, value in headers.items():
                 cmd.extend(['-H', f'{key}: {value}'])
 
-        # 如果有认证token，添加Authorization头
         if self.auth_token:
             cmd.extend(['-H', f'Authorization: Bearer {self.auth_token}'])
 
-        # 如果指定了输出文件，使用-o参数
         if output_file:
             cmd.extend(['-o', output_file])
 
         cmd.append(url)
-
-        # 执行请求
+        logger.info("""---
+[ 步骤 3/3: 获取镜像Manifest ]
+---""")
         result = self._run_curl_command(cmd)
 
         # 解析响应
@@ -147,14 +183,7 @@ class DockerRegistryClient:
                 response_headers[key.strip().lower()] = value.strip()
 
         # 如果需要认证且还没有token
-        if status_code == 401 and not self.auth_token:
-            www_auth = response_headers.get('www-authenticate')
-            token = self._get_auth_token(www_auth)
-
-            if token:
-                self.auth_token = token
-                # 重新发送请求
-                return self._make_registry_request(path, headers, output_file)
+        # 由于我们已经预先获取了token，这里不再需要处理401
 
         if status_code >= 400:
             raise Exception(f"HTTP {status_code}: {body}")
