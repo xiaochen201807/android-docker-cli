@@ -52,6 +52,8 @@ class DockerRegistryClient:
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            if not result.stdout and not result.stderr:
+                raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr="curl返回空响应")
             return result
         except subprocess.CalledProcessError as e:
             logger.error(f"!!! curl命令执行失败 (错误码: {e.returncode}) !!!")
@@ -159,22 +161,37 @@ class DockerRegistryClient:
 ---""")
         result = self._run_curl_command(cmd)
 
-        # 解析响应
+        # 解析响应，处理可能存在的多个HTTP头（例如重定向）
         response_text = result.stdout
-
-        # 分离headers和body
-        if '\r\n\r\n' in response_text:
-            headers_text, body = response_text.split('\r\n\r\n', 1)
-        elif '\n\n' in response_text:
-            headers_text, body = response_text.split('\n\n', 1)
+        
+        # 找到最后一个HTTP头块
+        last_header_block_start = response_text.rfind('HTTP/')
+        
+        # 分离最后的头和body
+        if last_header_block_start != -1:
+            response_part = response_text[last_header_block_start:]
+            if '\r\n\r\n' in response_part:
+                headers_text, body = response_part.split('\r\n\r\n', 1)
+            elif '\n\n' in response_part:
+                headers_text, body = response_part.split('\n\n', 1)
+            else:
+                headers_text = response_part
+                body = ''
         else:
-            headers_text = response_text
-            body = ''
+            # 如果找不到 "HTTP/"，则假定整个响应都是body（不太可能发生）
+            headers_text = ''
+            body = response_text
 
         # 解析状态码和headers
         lines = headers_text.split('\n')
-        status_line = lines[0]
-        status_code = int(status_line.split()[1])
+        status_line = lines[0] if lines else ''
+        if ' ' in status_line:
+            try:
+                status_code = int(status_line.split()[1])
+            except (ValueError, IndexError):
+                status_code = 0 # 无法解析状态码
+        else:
+            status_code = 0
 
         response_headers = {}
         for line in lines[1:]:
