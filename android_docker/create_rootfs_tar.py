@@ -53,7 +53,8 @@ class DockerRegistryClient:
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             if not result.stdout and not result.stderr:
-                raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr="curl返回空响应")
+                # 记录警告而不是抛出异常，以增加网络弹性
+                logger.warning(f"curl命令返回空响应: {' '.join(cmd)}")
             return result
         except subprocess.CalledProcessError as e:
             logger.error(f"!!! curl命令执行失败 (错误码: {e.returncode}) !!!")
@@ -91,7 +92,7 @@ class DockerRegistryClient:
 
                 # 使用curl获取token
                 try:
-                    cmd = ['curl', '-s'] # Token获取不需要-i
+                    cmd = ['curl', '-v'] # Token获取不需要-i
                     if self.username and self.password:
                         cmd.extend(['-u', f'{self.username}:{self.password}'])
                     cmd.extend(['-H', f'User-Agent: {self.user_agent}', auth_url])
@@ -118,7 +119,7 @@ class DockerRegistryClient:
         # 步骤1：先发一个请求获取认证头
         if not self.auth_token:
             url = f"{self.registry_url}/v2/{path}"
-            cmd = ['curl', '-s', '-i', '--insecure', url]
+            cmd = ['curl', '-v', '-i', '--insecure', url]
             logger.info("""---
 [ 步骤 1/3: 探测认证服务器 ]
 ---""")
@@ -143,7 +144,7 @@ class DockerRegistryClient:
 
         # 步骤3：使用token（或匿名）发送最终请求
         url = f"{self.registry_url}/v2/{path}"
-        cmd = ['curl', '-s', '-i', '--insecure', '-H', f'User-Agent: {self.user_agent}']
+        cmd = ['curl', '-v', '-i', '--insecure', '-H', f'User-Agent: {self.user_agent}']
 
         if headers:
             for key, value in headers.items():
@@ -243,7 +244,7 @@ class DockerRegistryClient:
         path = f"{self.image_name}/blobs/{digest}"
 
         # 直接下载到文件
-        cmd = ['curl', '-s', '-L', '-H', f'User-Agent: {self.user_agent}']
+        cmd = ['curl', '-v', '-L', '-H', f'User-Agent: {self.user_agent}']
 
         # 如果有认证token，添加Authorization头
         if self.auth_token:
@@ -387,6 +388,24 @@ class DockerImageToRootFS:
         # 获取manifest
         manifest, content_type = client.get_manifest()
 
+        # 如果是manifest list，选择一个具体的manifest
+        if 'manifest.list' in content_type or 'image.index' in content_type:
+            logger.warning("检测到manifest list，选择第一个manifest")
+            if manifest.get('manifests'):
+                first_manifest_descriptor = manifest['manifests'][0]
+                first_manifest_digest = first_manifest_descriptor['digest']
+                
+                # 获取子manifest
+                logger.info(f"""---
+[ 步骤 3/3: 获取镜像Manifest ]
+---""")
+                response = client._make_registry_request(f"{client.image_name}/manifests/{first_manifest_digest}")
+                manifest = json.loads(response['body'])
+                content_type = response['headers'].get('content-type', '') # 更新content_type
+                logger.info(f"已选择子manifest，类型: {content_type}")
+            else:
+                raise ValueError("在manifest list中找不到有效的manifest")
+
         # 创建OCI目录结构
         blobs_dir = os.path.join(oci_dir, 'blobs', 'sha256')
         os.makedirs(blobs_dir, exist_ok=True)
@@ -524,26 +543,20 @@ class DockerImageToRootFS:
         # 处理不同类型的manifest
         layers = []
 
-        if 'layers' in manifest:
+        if 'layers' in manifest and manifest['layers']:
             # Docker v2 manifest 或 OCI manifest
             layers = manifest['layers'][:]
             if 'config' in manifest:
                 layers.append(manifest['config'])
-        elif 'fsLayers' in manifest:
+        elif 'fsLayers' in manifest and manifest['fsLayers']:
             # Docker v1 manifest (已废弃，但仍需支持)
             layers = manifest['fsLayers'][:]
             if 'history' in manifest:
                 # v1 manifest的config信息在history中
                 pass
-        elif 'manifests' in manifest:
-            # Manifest list - 需要选择合适的manifest
-            logger.warning("检测到manifest list，选择第一个manifest")
-            if manifest['manifests']:
-                first_manifest_digest = manifest['manifests'][0]['digest']
-                # 递归下载选中的manifest
-                response = client._make_registry_request(f"{client.image_name}/manifests/{first_manifest_digest}")
-                sub_manifest = json.loads(response['body'])
-                return self._download_layers(client, sub_manifest, blobs_dir)
+        # manifest list 的处理已移到调用方
+        elif not layers:
+            raise ValueError("Manifest中没有找到'layers'或'fsLayers'字段，或者它们为空")
 
         for layer in layers:
             digest = layer.get('digest') or layer.get('blobSum')
