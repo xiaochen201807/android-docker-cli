@@ -19,6 +19,7 @@ import gzip
 import time
 from pathlib import Path
 from urllib.parse import urlparse
+import platform
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -259,13 +260,30 @@ class DockerRegistryClient:
         return output_path
 
 class DockerImageToRootFS:
-    def __init__(self, image_url, output_path=None, username=None, password=None):
+    def __init__(self, image_url, output_path=None, username=None, password=None, architecture=None):
         self.image_url = image_url
         self.output_path = output_path or f"{self._get_image_name()}_rootfs.tar"
         self.temp_dir = None
         self.username = username
         self.password = password
+        self.architecture = architecture or self._get_current_architecture()
+        logger.info(f"目标架构: {self.architecture}")
         
+    def _get_current_architecture(self):
+        """获取当前系统的架构"""
+        machine = platform.machine().lower()
+        if machine in ['x86_64', 'amd64']:
+            return 'amd64'
+        elif machine in ['aarch64', 'arm64']:
+            return 'arm64'
+        elif machine.startswith('armv'):
+            return 'arm'
+        elif machine in ['i386', 'i686']:
+            return '386'
+        else:
+            logger.warning(f"无法识别的架构: {machine}, 将默认使用 amd64")
+            return 'amd64'
+
     def _get_image_name(self):
         """从镜像URL中提取镜像名称"""
         # 从URL中提取镜像名称，去掉域名和标签
@@ -388,23 +406,34 @@ class DockerImageToRootFS:
         # 获取manifest
         manifest, content_type = client.get_manifest()
 
-        # 如果是manifest list，选择一个具体的manifest
+        # 如果是manifest list，根据架构选择一个具体的manifest
         if 'manifest.list' in content_type or 'image.index' in content_type:
-            logger.warning("检测到manifest list，选择第一个manifest")
-            if manifest.get('manifests'):
-                first_manifest_descriptor = manifest['manifests'][0]
-                first_manifest_digest = first_manifest_descriptor['digest']
+            logger.info("检测到manifest list，正在寻找匹配的架构...")
+            
+            selected_manifest_descriptor = None
+            for manifest_descriptor in manifest.get('manifests', []):
+                platform_info = manifest_descriptor.get('platform', {})
+                if platform_info.get('architecture') == self.architecture:
+                    # 优先选择与OS匹配的，如果没有os字段则直接匹配
+                    if platform_info.get('os') == 'linux' or 'os' not in platform_info:
+                        selected_manifest_descriptor = manifest_descriptor
+                        break
+            
+            if selected_manifest_descriptor:
+                target_digest = selected_manifest_descriptor['digest']
+                logger.info(f"找到匹配架构 '{self.architecture}' 的manifest: {target_digest}")
                 
                 # 获取子manifest
                 logger.info(f"""---
 [ 步骤 3/3: 获取镜像Manifest ]
 ---""")
-                response = client._make_registry_request(f"{client.image_name}/manifests/{first_manifest_digest}")
+                response = client._make_registry_request(f"{client.image_name}/manifests/{target_digest}")
                 manifest = json.loads(response['body'])
                 content_type = response['headers'].get('content-type', '') # 更新content_type
                 logger.info(f"已选择子manifest，类型: {content_type}")
             else:
-                raise ValueError("在manifest list中找不到有效的manifest")
+                available_archs = [m.get('platform', {}).get('architecture') for m in manifest.get('manifests', [])]
+                raise ValueError(f"在manifest list中找不到适用于架构 '{self.architecture}' 的镜像。可用架构: {available_archs}")
 
         # 创建OCI目录结构
         blobs_dir = os.path.join(oci_dir, 'blobs', 'sha256')
@@ -1133,6 +1162,11 @@ def main():
         help='指定用于curl的网络代理 (例如: "http://user:pass@host:port" 或 "socks5://host:port")'
     )
     
+    parser.add_argument(
+        '--arch',
+        help='指定目标架构 (例如: amd64, arm64)。默认为自动检测。'
+    )
+    
     args = parser.parse_args()
     
     if args.verbose:
@@ -1141,7 +1175,7 @@ def main():
     logger.info(f"开始处理Docker镜像: {args.image_url}")
     
     # 将代理参数传递给处理器
-    processor = DockerImageToRootFS(args.image_url, args.output, args.username, args.password)
+    processor = DockerImageToRootFS(args.image_url, args.output, args.username, args.password, args.arch)
     # 在客户端中也需要设置代理
     if args.proxy:
         # 这是个简化处理，理想情况下应该在DockerRegistryClient中处理
