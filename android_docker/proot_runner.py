@@ -114,6 +114,11 @@ class ProotRunner:
         if password:
             cmd.extend(['--password', password])
         
+        # 获取并传递代理参数
+        proxy = os.environ.get('https_proxy') or os.environ.get('HTTPS_PROXY')
+        if proxy:
+            cmd.extend(['--proxy', proxy])
+
         cmd.append(image_url)
 
         try:

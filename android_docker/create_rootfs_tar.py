@@ -16,6 +16,7 @@ import json
 import hashlib
 import tarfile
 import gzip
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -36,20 +37,19 @@ class DockerRegistryClient:
         self.password = password
 
     def _run_curl_command(self, cmd):
-        """执行curl命令"""
-        # 添加 --insecure 和 --verbose 选项以诊断网络问题
-        debug_cmd = cmd[:1] + ['--insecure', '--verbose'] + cmd[1:]
+        """执行curl命令（最终简化版）"""
+        # 总是添加 --insecure, -s, -L
+        final_cmd = ['curl', '-s', '-L', '--insecure']
+        # 添加除了 'curl' 之外的所有原始参数
+        final_cmd.extend(cmd[1:])
+        
         try:
-            result = subprocess.run(debug_cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(final_cmd, capture_output=True, text=True, check=True)
             return result
         except subprocess.CalledProcessError as e:
-            if e.returncode == 7:
-                logger.error(f"curl无法连接到主机: {' '.join(debug_cmd)}")
-                logger.error("这通常是由于网络问题、DNS解析失败或防火墙导致的。")
-            else:
-                logger.error(f"curl命令执行失败 (错误码: {e.returncode}): {' '.join(debug_cmd)}")
-            # 打印详细的curl错误输出
-            logger.error(f"CURL VERBOSE OUTPUT:\n{e.stderr}")
+            logger.error(f"curl命令执行失败 (错误码: {e.returncode})")
+            logger.error(f"您可以手动运行以下命令进行测试:\n{' '.join(final_cmd)}")
+            logger.error(f"错误输出: {e.stderr}")
             raise
 
     def _get_auth_token(self, www_authenticate_header):
@@ -81,32 +81,29 @@ class DockerRegistryClient:
 
                 # 使用curl获取token
                 try:
-                    # 获取token的请求不应该包含-i，因为它只需要body
-                    # 但为了调试，我们暂时保留--verbose
-                    cmd = [
-                        'curl', '-s'
-                    ]
+                    cmd = ['curl'] # 第一个元素会被_run_curl_command忽略
                     if self.username and self.password:
                         cmd.extend(['-u', f'{self.username}:{self.password}'])
                     cmd.extend(['-H', f'User-Agent: {self.user_agent}', auth_url])
                     
-                    # 为了获取token，我们直接运行命令，不需要_run_curl_command的--verbose
-                    # 因为token接口的响应体就是纯JSON
-                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                    result = self._run_curl_command(cmd)
                     token_data = json.loads(result.stdout)
                     return token_data.get('token')
                 except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
                     logger.warning(f"获取认证token失败: {e}")
+                    # 在失败时打印可手动执行的命令
+                    if isinstance(e, subprocess.CalledProcessError):
+                        logger.warning(f"您可以手动运行以下命令测试token获取:\n{' '.join(cmd)}")
                     return None
 
         return None
 
     def _make_registry_request(self, path, headers=None, output_file=None):
-        """向registry发送请求，处理认证"""
+        """向registry发送请求，处理认证（最终简化版）"""
         url = f"{self.registry_url}/v2/{path}"
 
         # 构建curl命令
-        cmd = ['curl', '-s', '-i', '-H', f'User-Agent: {self.user_agent}']
+        cmd = ['curl', '-i', '-H', f'User-Agent: {self.user_agent}']
 
         # 添加额外的headers
         if headers:
@@ -1072,6 +1069,10 @@ def main():
         '--password',
         help='Docker Registry密码或token'
     )
+    parser.add_argument(
+        '--proxy',
+        help='指定用于curl的网络代理 (例如: "http://user:pass@host:port" 或 "socks5://host:port")'
+    )
     
     args = parser.parse_args()
     
@@ -1080,7 +1081,15 @@ def main():
     
     logger.info(f"开始处理Docker镜像: {args.image_url}")
     
+    # 将代理参数传递给处理器
     processor = DockerImageToRootFS(args.image_url, args.output, args.username, args.password)
+    # 在客户端中也需要设置代理
+    if args.proxy:
+        # 这是个简化处理，理想情况下应该在DockerRegistryClient中处理
+        # 但为了快速解决问题，我们通过环境变量设置
+        os.environ['https_proxy'] = args.proxy
+        os.environ['http_proxy'] = args.proxy
+        logger.info(f"已设置网络代理: {args.proxy}")
     success = processor.create_rootfs_tar()
     
     sys.exit(0 if success else 1)
