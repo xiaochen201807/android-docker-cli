@@ -26,21 +26,30 @@ logger = logging.getLogger(__name__)
 class DockerRegistryClient:
     """Docker Registry API客户端，使用curl下载镜像"""
 
-    def __init__(self, registry_url, image_name, tag='latest'):
+    def __init__(self, registry_url, image_name, tag='latest', username=None, password=None):
         self.registry_url = registry_url
         self.image_name = image_name
         self.tag = tag
         self.auth_token = None
         self.user_agent = 'docker-rootfs-creator/1.0'
+        self.username = username
+        self.password = password
 
     def _run_curl_command(self, cmd):
         """执行curl命令"""
+        # 添加 --insecure 和 --verbose 选项以诊断网络问题
+        debug_cmd = cmd[:1] + ['--insecure', '--verbose'] + cmd[1:]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(debug_cmd, capture_output=True, text=True, check=True)
             return result
         except subprocess.CalledProcessError as e:
-            logger.error(f"curl命令执行失败: {' '.join(cmd)}")
-            logger.error(f"错误输出: {e.stderr}")
+            if e.returncode == 7:
+                logger.error(f"curl无法连接到主机: {' '.join(debug_cmd)}")
+                logger.error("这通常是由于网络问题、DNS解析失败或防火墙导致的。")
+            else:
+                logger.error(f"curl命令执行失败 (错误码: {e.returncode}): {' '.join(debug_cmd)}")
+            # 打印详细的curl错误输出
+            logger.error(f"CURL VERBOSE OUTPUT:\n{e.stderr}")
             raise
 
     def _get_auth_token(self, www_authenticate_header):
@@ -74,8 +83,10 @@ class DockerRegistryClient:
                 try:
                     cmd = [
                         'curl', '-s', '-H', f'User-Agent: {self.user_agent}',
-                        auth_url
                     ]
+                    if self.username and self.password:
+                        cmd.extend(['-u', f'{self.username}:{self.password}'])
+                    cmd.append(auth_url)
                     result = self._run_curl_command(cmd)
                     token_data = json.loads(result.stdout)
                     return token_data.get('token')
@@ -199,10 +210,12 @@ class DockerRegistryClient:
         return output_path
 
 class DockerImageToRootFS:
-    def __init__(self, image_url, output_path=None):
+    def __init__(self, image_url, output_path=None, username=None, password=None):
         self.image_url = image_url
         self.output_path = output_path or f"{self._get_image_name()}_rootfs.tar"
         self.temp_dir = None
+        self.username = username
+        self.password = password
         
     def _get_image_name(self):
         """从镜像URL中提取镜像名称"""
@@ -321,7 +334,7 @@ class DockerImageToRootFS:
         registry, image_name, tag = self._parse_image_url()
 
         # 创建registry客户端
-        client = DockerRegistryClient(registry, image_name, tag)
+        client = DockerRegistryClient(registry, image_name, tag, self.username, self.password)
 
         # 获取manifest
         manifest, content_type = client.get_manifest()
@@ -1046,6 +1059,14 @@ def main():
         action='store_true',
         help='显示详细日志'
     )
+    parser.add_argument(
+        '--username',
+        help='Docker Registry用户名'
+    )
+    parser.add_argument(
+        '--password',
+        help='Docker Registry密码或token'
+    )
     
     args = parser.parse_args()
     
@@ -1054,7 +1075,7 @@ def main():
     
     logger.info(f"开始处理Docker镜像: {args.image_url}")
     
-    processor = DockerImageToRootFS(args.image_url, args.output)
+    processor = DockerImageToRootFS(args.image_url, args.output, args.username, args.password)
     success = processor.create_rootfs_tar()
     
     sys.exit(0 if success else 1)

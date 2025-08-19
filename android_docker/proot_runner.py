@@ -89,7 +89,7 @@ class ProotRunner:
                 logger.warning(f"读取缓存信息失败: {e}")
         return None
 
-    def _download_image(self, image_url, force_download=False):
+    def _download_image(self, image_url, force_download=False, username=None, password=None):
         """下载镜像到缓存"""
         cache_path = self._get_image_cache_path(image_url)
 
@@ -108,8 +108,13 @@ class ProotRunner:
             sys.executable,
             '-m', 'android_docker.create_rootfs_tar',
             '-o', cache_path,
-            image_url
         ]
+        if username:
+            cmd.extend(['--username', username])
+        if password:
+            cmd.extend(['--password', password])
+        
+        cmd.append(image_url)
 
         try:
             subprocess.run(cmd, check=True)
@@ -137,7 +142,7 @@ class ProotRunner:
 
         return any(url_indicators)
 
-    def _prepare_rootfs(self, input_path, force_download=False, provided_rootfs_dir=None):
+    def _prepare_rootfs(self, input_path, args, provided_rootfs_dir=None):
         """准备根文件系统（下载或使用现有）"""
         
         # 对于重启操作，如果持久化目录已存在且非空，则直接使用
@@ -151,7 +156,12 @@ class ProotRunner:
         if self._is_image_url(input_path):
             # 这是一个镜像URL，需要下载
             logger.info(f"检测到镜像URL: {input_path}")
-            cache_path = self._download_image(input_path, force_download)
+            cache_path = self._download_image(
+                input_path,
+                force_download=getattr(args, 'force_download', False),
+                username=getattr(args, 'username', None),
+                password=getattr(args, 'password', None)
+            )
             if not cache_path:
                 return None
             return self._extract_rootfs_if_needed(cache_path, provided_rootfs_dir=provided_rootfs_dir)
@@ -515,6 +525,7 @@ class ProotRunner:
     
     def run(self, input_path, args, rootfs_dir=None, pid_file=None):
         """运行容器（一条龙服务）"""
+        log_file_handle = None
         try:
             # 检查依赖
             if not self._check_dependencies():
@@ -522,7 +533,7 @@ class ProotRunner:
 
             # 准备根文件系统（下载或使用现有）
             logger.info("准备根文件系统...")
-            rootfs_dir = self._prepare_rootfs(input_path, args.force_download, provided_rootfs_dir=rootfs_dir)
+            rootfs_dir = self._prepare_rootfs(input_path, args, provided_rootfs_dir=rootfs_dir)
             if not rootfs_dir:
                 return False
 
@@ -626,7 +637,7 @@ class ProotRunner:
                 log_file_handle.close()
 
             # 只有在前台运行时，并且我们创建了临时目录时，才进行清理
-            if not args.detach:
+            if hasattr(args, 'detach') and not args.detach:
                 self._cleanup()
     
     def _cleanup(self):
@@ -799,6 +810,8 @@ def main():
         '--cache-dir',
         help='指定缓存目录路径'
     )
+    parser.add_argument('--username', help='Registry用户名')
+    parser.add_argument('--password', help='Registry密码')
 
     parser.add_argument(
         '--rootfs-dir',

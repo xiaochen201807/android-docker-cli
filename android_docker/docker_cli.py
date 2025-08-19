@@ -15,6 +15,8 @@ import subprocess
 import signal
 from pathlib import Path
 from datetime import datetime
+import getpass
+from urllib.parse import urlparse
 
 # 导入现有模块
 from .proot_runner import ProotRunner
@@ -31,13 +33,18 @@ class DockerCLI:
         self.cache_dir = cache_dir or self._get_default_cache_dir()
         self.runner = ProotRunner(cache_dir=self.cache_dir)
         self.containers_file = os.path.join(self.cache_dir, 'containers.json')
+        self.config_file = self._get_config_file_path()
         self._ensure_cache_dir()
         
     def _get_default_cache_dir(self):
         """获取默认缓存目录"""
         home_dir = os.path.expanduser('~')
         return os.path.join(home_dir, '.docker_proot_cache')
-        
+
+    def _get_config_file_path(self):
+        """获取配置文件的路径"""
+        return os.path.join(self.cache_dir, 'config.json')
+
     def _ensure_cache_dir(self):
         """确保缓存目录存在"""
         os.makedirs(self.cache_dir, exist_ok=True)
@@ -59,6 +66,24 @@ class DockerCLI:
                 json.dump(containers, f, indent=2)
         except Exception as e:
             logger.error(f"保存容器信息失败: {e}")
+
+    def _load_config(self):
+        """加载配置信息，包括认证凭证"""
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"读取配置文件失败: {e}")
+        return {'auths': {}}
+
+    def _save_config(self, config):
+        """保存配置信息"""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            logger.error(f"保存配置文件失败: {e}")
             
     def _generate_container_id(self):
         """生成容器ID"""
@@ -86,10 +111,33 @@ class DockerCLI:
         return os.path.join(container_dir, 'container.log')
 
             
+    def login(self, server, username, password):
+        """登录到Docker Registry"""
+        if not username:
+            username = input("Username: ")
+        if not password:
+            password = getpass.getpass("Password: ")
+
+        config = self._load_config()
+        if 'auths' not in config:
+            config['auths'] = {}
+        
+        # 默认服务器为Docker Hub
+        if not server:
+            server = "https://index.docker.io/v1/"
+
+        config['auths'][server] = {
+            'username': username,
+            'password': password # For simplicity, storing plain text.
+        }
+        self._save_config(config)
+        logger.info(f"登录成功: {server}")
+        return True
+
     def pull(self, image_url, force=False):
         """拉取镜像"""
         logger.info(f"拉取镜像: {image_url}")
-        
+
         # 检查是否已缓存
         if not force and self.runner._is_image_cached(image_url):
             cache_info = self.runner._load_cache_info(image_url)
@@ -97,9 +145,30 @@ class DockerCLI:
                 logger.info(f"镜像已存在于缓存中")
                 logger.info(f"缓存时间: {cache_info.get('created_time_str', 'Unknown')}")
                 return True
-                
-        # 下载镜像
-        cache_path = self.runner._download_image(image_url, force_download=force)
+
+        # 加载凭证
+        config = self._load_config()
+        auths = config.get('auths', {})
+        
+        # 简单的匹配逻辑，实际可能需要更复杂的匹配
+        # 这里我们假设镜像URL的域名部分能匹配到auths中的key
+        username, password = None, None
+        for server, creds in auths.items():
+            server_name = urlparse(server).hostname or server
+            if server_name in image_url or (server_name == "index.docker.io" and '/' not in image_url.split(':')[0]):
+                username = creds.get('username')
+                password = creds.get('password')
+                logger.info(f"找到 {server} 的凭证")
+                break
+        
+        # 现在pull直接调用runner的下载方法
+        cache_path = self.runner._download_image(
+            image_url,
+            force_download=force,
+            username=username,
+            password=password
+        )
+
         if cache_path:
             logger.info(f"✓ 镜像拉取成功: {image_url}")
             return True
@@ -109,6 +178,14 @@ class DockerCLI:
             
     def run(self, image_url, command=None, name=None, **kwargs):
         """运行容器"""
+        # 确保在运行前镜像存在
+        if not self.runner._is_image_cached(image_url) or kwargs.get('force_download', False):
+            logger.info(f"镜像不存在或需要强制下载，执行 'pull' 操作...")
+            pull_success = self.pull(image_url, force=kwargs.get('force_download', False))
+            if not pull_success:
+                logger.error(f"无法运行容器，因为镜像拉取失败: {image_url}")
+                return None
+
         container_id = name if name else self._generate_container_id()
         container_dir = self._get_container_dir(container_id)
         os.makedirs(container_dir, exist_ok=True)
@@ -122,6 +199,8 @@ class DockerCLI:
                 self.detach = kwargs.get('detach', False)
                 self.interactive = kwargs.get('interactive', False)
                 self.force_download = kwargs.get('force_download', False)
+                self.username = kwargs.get('username')
+                self.password = kwargs.get('password')
                 self.command = command
                 if self.command and self.command[0] == '--':
                     self.command = self.command[1:]
@@ -213,6 +292,12 @@ class DockerCLI:
             '--log-file', log_file,
             '--detach',
         ]
+        
+        # 统一从args对象获取凭证
+        if hasattr(args, 'username') and args.username:
+            cmd.extend(['--username', args.username])
+        if hasattr(args, 'password') and args.password:
+            cmd.extend(['--password', args.password])
 
         # 添加从docker_cli传递过来的参数
         if args.force_download:
@@ -810,6 +895,12 @@ def create_parser():
 
     subparsers = parser.add_subparsers(dest='subcommand', help='可用命令', required=True)
 
+    # login 命令
+    login_parser = subparsers.add_parser('login', help='登录到Docker Registry')
+    login_parser.add_argument('server', nargs='?', default=None, help='Registry服务器地址 (默认为Docker Hub)')
+    login_parser.add_argument('-u', '--username', help='用户名')
+    login_parser.add_argument('-p', '--password', help='密码')
+
     # pull 命令
     pull_parser = subparsers.add_parser('pull', help='拉取镜像')
     pull_parser.add_argument('image', help='镜像URL')
@@ -900,11 +991,26 @@ def main():
     cli = DockerCLI(cache_dir=args.cache_dir)
 
     try:
-        if args.subcommand == 'pull':
+        if args.subcommand == 'login':
+            success = cli.login(args.server, args.username, args.password)
+            sys.exit(0 if success else 1)
+
+        elif args.subcommand == 'pull':
             success = cli.pull(args.image, force=args.force)
             sys.exit(0 if success else 1)
 
         elif args.subcommand == 'run':
+            # 在调用run之前加载凭证并附加到kwargs
+            config = cli._load_config()
+            auths = config.get('auths', {})
+            username, password = None, None
+            for server, creds in auths.items():
+                server_name = urlparse(server).hostname or server
+                if server_name in args.image or (server_name == "index.docker.io" and '/' not in args.image.split(':')[0]):
+                    username = creds.get('username')
+                    password = creds.get('password')
+                    break
+            
             container_id = cli.run(
                 args.image,
                 command=args.command,
@@ -914,7 +1020,9 @@ def main():
                 workdir=args.workdir,
                 detach=args.detach,
                 interactive=args.interactive_tty,
-                force_download=args.force_download
+                force_download=args.force_download,
+                username=username,
+                password=password
             )
             sys.exit(0 if container_id else 1)
 
