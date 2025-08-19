@@ -361,11 +361,13 @@ class DockerImageToRootFS:
             image_url = image_url[9:]
 
         # 分离标签
-        if ':' in image_url and '/' in image_url:
-            # 检查最后一个:是否是标签分隔符
+        # 改进的标签分离逻辑
+        if ':' in image_url:
+            # 检查冒号是否在最后一个斜杠之后，或者根本没有斜杠
             last_colon = image_url.rfind(':')
             last_slash = image_url.rfind('/')
             if last_colon > last_slash:
+                # 适用于 a/b:tag, a:123/b:tag, a:tag
                 image_url, tag = image_url.rsplit(':', 1)
 
         # 分离registry和镜像名
