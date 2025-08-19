@@ -81,16 +81,21 @@ class DockerRegistryClient:
 
                 # 使用curl获取token
                 try:
+                    # 获取token的请求不应该包含-i，因为它只需要body
+                    # 但为了调试，我们暂时保留--verbose
                     cmd = [
-                        'curl', '-s', '-H', f'User-Agent: {self.user_agent}',
+                        'curl', '-s'
                     ]
                     if self.username and self.password:
                         cmd.extend(['-u', f'{self.username}:{self.password}'])
-                    cmd.append(auth_url)
-                    result = self._run_curl_command(cmd)
+                    cmd.extend(['-H', f'User-Agent: {self.user_agent}', auth_url])
+                    
+                    # 为了获取token，我们直接运行命令，不需要_run_curl_command的--verbose
+                    # 因为token接口的响应体就是纯JSON
+                    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
                     token_data = json.loads(result.stdout)
                     return token_data.get('token')
-                except Exception as e:
+                except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
                     logger.warning(f"获取认证token失败: {e}")
                     return None
 
