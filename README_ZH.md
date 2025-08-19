@@ -36,7 +36,14 @@ sudo apt install python3 proot curl tar
 安装后，您可以像使用标准 Docker 命令行一样使用此工具。
 
 ```bash
-# 拉取镜像
+# 登录到 Docker Registry (例如 Docker Hub)
+docker login
+
+# 登录后从私有仓库拉取镜像
+docker login your-private-registry.com
+docker pull your-private-registry.com/my-image
+
+# 拉取一个公开镜像
 docker pull alpine:latest
 
 # 在前台运行一个容器
@@ -47,6 +54,10 @@ docker run -d -e "API_KEY=sk-12345" --volume /sdcard:/data nginx:alpine
 
 # 交互式运行容器
 docker run -it alpine:latest /bin/sh
+
+# 使用项目中的自定义配置文件运行 Nginx 容器
+# 此示例使用 `examples/nginx.conf` 文件, 它将监听 8777 端口。
+docker run -d --name my-nginx -v $(pwd)/examples/nginx.conf:/etc/nginx/nginx.conf nginx:alpine
 
 # 列出正在运行的容器
 docker ps
@@ -82,6 +93,9 @@ docker images
 
 # 删除一个缓存的镜像
 docker rmi alpine:latest
+
+# 登录到镜像仓库
+docker login your-private-registry.com
 ```
 
 ## Docker Compose 支持
@@ -115,6 +129,7 @@ services:
 ## 主要特性
 
 - ✅ **完整的容器生命周期**: `run`, `ps`, `stop`, `start`, `restart`, `logs`, `rm`, `attach`, `exec`。
+- ✅ **镜像仓库认证**: 使用 `login` 命令登录私有或公共镜像仓库。
 - ✅ **Docker Compose 支持**: 使用 `docker-compose up` 和 `down` 管理多容器配置。
 - ✅ **Docker风格CLI**: 熟悉且直观的命令行界面。
 - ✅ **持久化存储**: 容器在重启后能保持其状态和文件系统，存储于 `~/.docker_proot_cache/`。

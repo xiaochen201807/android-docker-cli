@@ -36,7 +36,14 @@ sudo apt install python3 proot curl tar
 After installation, you can use this tool just like the standard Docker command line.
 
 ```bash
-# Pull an image
+# Log in to a Docker registry (e.g., Docker Hub)
+docker login
+
+# Pull an image from a private registry after logging in
+docker login your-private-registry.com
+docker pull your-private-registry.com/my-image
+
+# Pull a public image
 docker pull alpine:latest
 
 # Run a container in the foreground
@@ -47,6 +54,10 @@ docker run -d -e "API_KEY=sk-12345" --volume /sdcard:/data nginx:alpine
 
 # Run a container interactively
 docker run -it swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/library/alpine:latest /bin/sh
+
+# Run an Nginx container with a custom configuration file from the project
+# This example uses the `examples/nginx.conf` file, which listens on port 8777.
+docker run -d --name my-nginx -v $(pwd)/examples/nginx.conf:/etc/nginx/nginx.conf nginx:alpine
 
 # List running containers
 docker ps
@@ -82,6 +93,9 @@ docker images
 
 # Remove a cached image
 docker rmi alpine:latest
+
+# Log in to a registry
+docker login your-private-registry.com
 ```
 
 ## Docker Compose Support
@@ -115,6 +129,7 @@ services:
 ## Key Features
 
 - ✅ **Full Container Lifecycle**: `run`, `ps`, `stop`, `start`, `restart`, `logs`, `rm`, `attach`, `exec`.
+- ✅ **Registry Authentication**: `login` to private or public registries.
 - ✅ **Docker Compose Support**: Manage multi-container setups with `docker-compose up` and `down`.
 - ✅ **Docker-Style CLI**: A familiar and intuitive command-line interface.
 - ✅ **Persistent Storage**: Containers maintain their state and filesystem across restarts, stored in `~/.docker_proot_cache/`.
