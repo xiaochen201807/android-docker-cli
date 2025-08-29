@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class DockerRegistryClient:
     """Docker Registry API客户端，使用curl下载镜像"""
 
-    def __init__(self, registry_url, image_name, tag='latest', username=None, password=None):
+    def __init__(self, registry_url, image_name, tag='latest', username=None, password=None, verbose=False):
         self.registry_url = registry_url
         self.image_name = image_name
         self.tag = tag
@@ -36,10 +36,11 @@ class DockerRegistryClient:
         self.user_agent = 'docker-rootfs-creator/1.0'
         self.username = username
         self.password = password
+        self.verbose = verbose
 
-    def _run_curl_command(self, cmd, print_cmd=True):
+    def _run_curl_command(self, cmd, print_cmd=True, show_progress=True):
         """执行并打印curl命令"""
-        if print_cmd:
+        if print_cmd and self.verbose:
             # 为了安全，打印命令时隐藏密码
             safe_cmd = []
             i = 0
@@ -51,15 +52,28 @@ class DockerRegistryClient:
                 i += 1
             logger.info(f"---\n[ 执行命令 ]\n{' '.join(safe_cmd)}\n---")
         
+        # 添加进度条参数
+        if show_progress and '-o' in cmd and not self.verbose:
+            # 找到输出文件参数
+            try:
+                output_idx = cmd.index('-o') + 1
+                if output_idx < len(cmd):
+                    # 添加进度条参数
+                    cmd.insert(1, '--progress-bar')
+            except (ValueError, IndexError):
+                pass
+        
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             if not result.stdout and not result.stderr:
                 # 记录警告而不是抛出异常，以增加网络弹性
-                logger.warning(f"curl命令返回空响应: {' '.join(cmd)}")
+                if self.verbose:
+                    logger.warning(f"curl命令返回空响应: {' '.join(cmd)}")
             return result
         except subprocess.CalledProcessError as e:
             logger.error(f"!!! curl命令执行失败 (错误码: {e.returncode}) !!!")
-            logger.error(f"""---
+            if self.verbose:
+                logger.error(f"""---
 [ 错误输出 ]
 ---\n{e.stderr.strip()}""")
             raise
@@ -100,16 +114,21 @@ class DockerRegistryClient:
                     
                     # 为了简单起见，我们直接调用，不再通过_run_curl_command
                     # 因为代理已经通过环境变量设置
-                    logger.info("""---
+                    if self.verbose:
+                        logger.info("""---
 [ 步骤 2/3: 获取认证Token ]
 ---""")
-                    result = self._run_curl_command(cmd)
+                    else:
+                        logger.info("获取认证Token...")
+                    result = self._run_curl_command(cmd, print_cmd=self.verbose)
                     token_data = json.loads(result.stdout)
+                    if not self.verbose:
+                        logger.info("✓ 成功获取认证Token")
                     return token_data.get('token')
                 except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
                     logger.warning(f"获取认证token失败: {e}")
                     # 在失败时打印可手动执行的命令
-                    if isinstance(e, subprocess.CalledProcessError):
+                    if isinstance(e, subprocess.CalledProcessError) and self.verbose:
                         logger.warning(f"您可以手动运行以下命令测试token获取:\n{' '.join(cmd)}")
                     return None
 
@@ -121,10 +140,13 @@ class DockerRegistryClient:
         if not self.auth_token:
             url = f"{self.registry_url}/v2/{path}"
             cmd = ['curl', '-v', '-i', '--insecure', url]
-            logger.info("""---
+            if self.verbose:
+                logger.info("""---
 [ 步骤 1/3: 探测认证服务器 ]
 ---""")
-            result = self._run_curl_command(cmd)
+            else:
+                logger.info("探测认证服务器...")
+            result = self._run_curl_command(cmd, print_cmd=self.verbose)
             
             auth_header = None
             for line in result.stdout.split('\n'):
@@ -137,72 +159,63 @@ class DockerRegistryClient:
                 token = self._get_auth_token(auth_header)
                 if token:
                     self.auth_token = token
-                    logger.info("✓ 成功获取认证Token")
+                    if not self.verbose:
+                        logger.info("✓ 成功获取认证Token")
                 else:
-                    logger.error("✗ 获取认证Token失败，将尝试匿名访问...")
+                    logger.warning("无法获取认证token，将尝试匿名访问")
             else:
-                logger.warning("未找到 'Www-Authenticate' 头，尝试匿名请求...")
+                if self.verbose:
+                    logger.info("无需认证")
 
-        # 步骤3：使用token（或匿名）发送最终请求
-        url = f"{self.registry_url}/v2/{path}"
-        cmd = ['curl', '-v', '-i', '--insecure', '-H', f'User-Agent: {self.user_agent}']
-
-        if headers:
-            for key, value in headers.items():
-                cmd.extend(['-H', f'{key}: {value}'])
-
-        if self.auth_token:
-            cmd.extend(['-H', f'Authorization: Bearer {self.auth_token}'])
-
-        if output_file:
-            cmd.extend(['-o', output_file])
-
-        cmd.append(url)
-        logger.info("""---
+        # 步骤3：使用token发送实际请求
+        if self.verbose:
+            logger.info("""---
 [ 步骤 3/3: 获取镜像Manifest ]
 ---""")
-        result = self._run_curl_command(cmd)
-
-        # 解析响应，处理可能存在的多个HTTP头（例如重定向）
-        response_text = result.stdout
         
-        # 找到最后一个HTTP头块
-        last_header_block_start = response_text.rfind('HTTP/')
+        url = f"{self.registry_url}/v2/{path}"
+        cmd = ['curl', '-v', '-i', '--insecure', '-H', f'User-Agent: {self.user_agent}']
         
-        # 分离最后的头和body
-        if last_header_block_start != -1:
-            response_part = response_text[last_header_block_start:]
-            if '\r\n\r\n' in response_part:
-                headers_text, body = response_part.split('\r\n\r\n', 1)
-            elif '\n\n' in response_part:
-                headers_text, body = response_part.split('\n\n', 1)
-            else:
-                headers_text = response_part
-                body = ''
-        else:
-            # 如果找不到 "HTTP/"，则假定整个响应都是body（不太可能发生）
-            headers_text = ''
-            body = response_text
-
-        # 解析状态码和headers
-        lines = headers_text.split('\n')
-        status_line = lines[0] if lines else ''
-        if ' ' in status_line:
-            try:
-                status_code = int(status_line.split()[1])
-            except (ValueError, IndexError):
-                status_code = 0 # 无法解析状态码
-        else:
-            status_code = 0
-
+        # 添加Accept头
+        if headers and 'Accept' in headers:
+            cmd.extend(['-H', f"Accept: {headers['Accept']}"])
+        
+        # 如果有认证token，添加Authorization头
+        if self.auth_token:
+            cmd.extend(['-H', f'Authorization: Bearer {self.auth_token}'])
+        
+        cmd.append(url)
+        
+        result = self._run_curl_command(cmd, print_cmd=self.verbose)
+        
+        # 解析响应
+        lines = result.stdout.split('\n')
+        status_line = None
         response_headers = {}
-        for line in lines[1:]:
-            if ':' in line:
+        body_start = 0
+        
+        for i, line in enumerate(lines):
+            if line.startswith('HTTP/'):
+                status_line = line
+                body_start = i + 1
+                break
+            elif ':' in line:
                 key, value = line.split(':', 1)
                 response_headers[key.strip().lower()] = value.strip()
 
         # 如果需要认证且还没有token
         # 由于我们已经预先获取了token，这里不再需要处理401
+
+        # 提取状态码
+        status_code = 200  # 默认值
+        if status_line:
+            try:
+                status_code = int(status_line.split()[1])
+            except (IndexError, ValueError):
+                pass
+
+        # 提取响应体
+        body = '\n'.join(lines[body_start:]) if body_start < len(lines) else ''
 
         if status_code >= 400:
             raise Exception(f"HTTP {status_code}: {body}")
@@ -215,7 +228,10 @@ class DockerRegistryClient:
 
     def get_manifest(self):
         """获取镜像manifest"""
-        logger.info(f"获取镜像manifest: {self.image_name}:{self.tag}")
+        if self.verbose:
+            logger.info(f"获取镜像manifest: {self.image_name}:{self.tag}")
+        else:
+            logger.info(f"获取镜像信息: {self.image_name}:{self.tag}")
 
         # 支持多种manifest格式
         accept_headers = [
@@ -235,12 +251,18 @@ class DockerRegistryClient:
         manifest = json.loads(response['body'])
         content_type = response['headers'].get('content-type', '')
 
-        logger.info(f"Manifest类型: {content_type}")
+        if self.verbose:
+            logger.info(f"Manifest类型: {content_type}")
         return manifest, content_type
 
     def download_blob(self, digest, output_path):
         """下载blob到指定路径"""
-        logger.info(f"下载blob: {digest}")
+        if self.verbose:
+            logger.info(f"下载blob: {digest}")
+        else:
+            # 显示简化的下载信息
+            blob_name = digest.split(':')[-1][:12]  # 显示前12位
+            logger.info(f"下载: {blob_name}...")
 
         path = f"{self.image_name}/blobs/{digest}"
 
@@ -254,19 +276,21 @@ class DockerRegistryClient:
         url = f"{self.registry_url}/v2/{path}"
         cmd.extend(['-o', output_path, url])
 
-        self._run_curl_command(cmd)
+        self._run_curl_command(cmd, print_cmd=self.verbose, show_progress=not self.verbose)
 
-        logger.debug(f"Blob已保存到: {output_path}")
+        if not self.verbose:
+            logger.info("✓ 下载完成")
         return output_path
 
 class DockerImageToRootFS:
-    def __init__(self, image_url, output_path=None, username=None, password=None, architecture=None):
+    def __init__(self, image_url, output_path=None, username=None, password=None, architecture=None, verbose=False):
         self.image_url = image_url
         self.output_path = output_path or f"{self._get_image_name()}_rootfs.tar"
         self.temp_dir = None
         self.username = username
         self.password = password
         self.architecture = architecture or self._get_current_architecture()
+        self.verbose = verbose
         logger.info(f"目标架构: {self.architecture}")
         
     def _get_current_architecture(self):
@@ -403,7 +427,7 @@ class DockerImageToRootFS:
         registry, image_name, tag = self._parse_image_url()
 
         # 创建registry客户端
-        client = DockerRegistryClient(registry, image_name, tag, self.username, self.password)
+        client = DockerRegistryClient(registry, image_name, tag, self.username, self.password, self.verbose)
 
         # 获取manifest
         manifest, content_type = client.get_manifest()
@@ -1169,15 +1193,42 @@ def main():
         help='指定目标架构 (例如: amd64, arm64)。默认为自动检测。'
     )
     
+    # 新增简洁模式选项
+    parser.add_argument(
+        '--quiet', '-q',
+        action='store_true',
+        help='简洁模式：减少冗余输出，显示下载进度'
+    )
+    
     args = parser.parse_args()
     
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
+    # 如果使用简洁模式，设置日志级别为WARNING以减少信息输出
+    if args.quiet:
+        logging.getLogger().setLevel(logging.WARNING)
+        # 创建一个自定义的简洁日志处理器
+        class QuietHandler(logging.StreamHandler):
+            def emit(self, record):
+                if record.levelno >= logging.WARNING:
+                    super().emit(record)
+                elif record.levelno == logging.INFO and not record.getMessage().startswith('✓'):
+                    # 只显示成功信息，不显示步骤信息
+                    pass
+                else:
+                    super().emit(record)
+        
+        # 替换根日志处理器
+        for handler in logging.getLogger().handlers[:]:
+            logging.getLogger().removeHandler(handler)
+        logging.getLogger().addHandler(QuietHandler())
+        logging.getLogger().setLevel(logging.INFO)
+    
     logger.info(f"开始处理Docker镜像: {args.image_url}")
     
     # 将代理参数传递给处理器
-    processor = DockerImageToRootFS(args.image_url, args.output, args.username, args.password, args.arch)
+    processor = DockerImageToRootFS(args.image_url, args.output, args.username, args.password, args.arch, args.verbose)
     # 在客户端中也需要设置代理
     if args.proxy:
         # 这是个简化处理，理想情况下应该在DockerRegistryClient中处理

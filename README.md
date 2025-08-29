@@ -13,13 +13,30 @@ A tool to run Docker images on Android using `proot`, without needing a Docker e
 
 ## Installation
 
-You can install this tool with a single command:
+You can install this tool using the following methods:
+
+## Method 1: Install from source (Recommended)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/jinhan1414/android-docker-cli/main/scripts/install.sh | sh
+# Clone the project
+git clone <your-repository-url>
+cd android-docker-cli
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Create symlink to system path (optional)
+sudo ln -s $(pwd)/android_docker/docker_cli.py /usr/local/bin/docker
 ```
 
-This will create an executable `docker` command in your path. After installation, you can run the tool by simply typing `docker`.
+## Method 2: Run directly
+
+```bash
+# Clone and run directly
+git clone <your-repository-url>
+cd android-docker-cli
+python -m android_docker.docker_cli --help
+```
 
 ## Install Dependencies
 

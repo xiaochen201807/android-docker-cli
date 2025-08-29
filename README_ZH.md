@@ -13,10 +13,29 @@
 
 ## 安装
 
-您可以使用一行命令来安装此工具：
+您可以使用以下方式安装此工具：
+
+## 方式1：从源码安装（推荐）
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/jinhan1414/android-docker-cli/main/scripts/install.sh | sh
+# 克隆项目
+git clone <your-repository-url>
+cd android-docker-cli
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 创建软链接到系统路径（可选）
+sudo ln -s $(pwd)/android_docker/docker_cli.py /usr/local/bin/docker
+```
+
+## 方式2：直接运行
+
+```bash
+# 克隆项目后直接运行
+git clone <your-repository-url>
+cd android-docker-cli
+python -m android_docker.docker_cli --help
 ```
 
 这将会创建一个名为 `docker` 的可执行命令到您的系统路径中。安装后，您只需输入 `docker` 即可运行此工具。
