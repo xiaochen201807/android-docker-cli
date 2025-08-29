@@ -134,16 +134,21 @@ class DockerCLI:
         logger.info(f"登录成功: {server}")
         return True
 
-    def pull(self, image_url, force=False):
+    def pull(self, image_url, force=False, quiet=False):
         """拉取镜像"""
-        logger.info(f"拉取镜像: {image_url}")
+        if not quiet:
+            logger.info(f"拉取镜像: {image_url}")
 
         # 检查是否已缓存
         if not force and self.runner._is_image_cached(image_url):
             cache_info = self.runner._load_cache_info(image_url)
             if cache_info:
-                logger.info(f"镜像已存在于缓存中")
-                logger.info(f"缓存时间: {cache_info.get('created_time_str', 'Unknown')}")
+                if not quiet:
+                    logger.info(f"镜像已存在于缓存中")
+                    logger.info(f"缓存时间: {cache_info.get('created_time_str', 'Unknown')}")
+                else:
+                    # 在quiet模式下，只输出镜像ID或名称
+                    print(image_url)
                 return True
 
         # 加载凭证
@@ -170,10 +175,15 @@ class DockerCLI:
         )
 
         if cache_path:
-            logger.info(f"✓ 镜像拉取成功: {image_url}")
+            if not quiet:
+                logger.info(f"✓ 镜像拉取成功: {image_url}")
+            else:
+                # 在quiet模式下，只输出镜像ID或名称
+                print(image_url)
             return True
         else:
-            logger.error(f"✗ 镜像拉取失败: {image_url}")
+            if not quiet:
+                logger.error(f"✗ 镜像拉取失败: {image_url}")
             return False
             
     def run(self, image_url, command=None, name=None, **kwargs):
@@ -181,7 +191,7 @@ class DockerCLI:
         # 确保在运行前镜像存在
         if not self.runner._is_image_cached(image_url) or kwargs.get('force_download', False):
             logger.info(f"镜像不存在或需要强制下载，执行 'pull' 操作...")
-            pull_success = self.pull(image_url, force=kwargs.get('force_download', False))
+            pull_success = self.pull(image_url, force=kwargs.get('force_download', False), quiet=False)
             if not pull_success:
                 logger.error(f"无法运行容器，因为镜像拉取失败: {image_url}")
                 return None
@@ -1644,6 +1654,7 @@ def create_parser():
     pull_parser = subparsers.add_parser('pull', help='拉取镜像')
     pull_parser.add_argument('image', help='镜像URL')
     pull_parser.add_argument('--force', action='store_true', help='强制重新下载')
+    pull_parser.add_argument('-q', '--quiet', action='store_true', help='静默模式，仅显示镜像ID')
 
     # push 命令
     push_parser = subparsers.add_parser('push', help='推送镜像到Docker Registry')
@@ -1844,7 +1855,7 @@ def main():
             sys.exit(0 if success else 1)
 
         elif args.subcommand == 'pull':
-            success = cli.pull(args.image, force=args.force)
+            success = cli.pull(args.image, force=args.force, quiet=args.quiet)
             sys.exit(0 if success else 1)
 
         elif args.subcommand == 'push':
