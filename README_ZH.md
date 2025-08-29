@@ -19,7 +19,7 @@
 
 ```bash
 # 克隆项目
-git clone git@github.com:xiaochen201807/android-docker-cli.git
+git clone https://github.com/xiaochen201807/android-docker-cli.git
 cd android-docker-cli
 
 # 安装依赖
@@ -40,7 +40,7 @@ sudo ln -s $(pwd)/android_docker/docker_cli.py /usr/local/bin/docker
 
 ```bash
 # 克隆项目后直接运行
-git clone git@github.com:xiaochen201807/android-docker-cli.git
+git clone https://github.com/xiaochen201807/android-docker-cli.git
 cd android-docker-cli
 python -m android_docker.docker_cli --help
 ```

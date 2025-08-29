@@ -6,9 +6,9 @@
 GITHUB_REPO="https://github.com/xiaochen201807/android-docker-cli.git"
 INSTALL_DIR="$HOME/.android-docker-cli"
 CMD_NAME="docker"
-CMD_PATH="$PREFIX/bin/$CMD_NAME"
+CMD_PATH="/data/data/com.termux/files/usr/bin/$CMD_NAME"
 DOCKER_COMPOSE_CMD_NAME="docker-compose"
-DOCKER_COMPOSE_CMD_PATH="$PREFIX/bin/$DOCKER_COMPOSE_CMD_NAME"
+DOCKER_COMPOSE_CMD_PATH="/data/data/com.termux/files/usr/bin/$DOCKER_COMPOSE_CMD_NAME"
 
 # --- Helper Functions ---
 echo_info() {
@@ -68,27 +68,27 @@ echo_info "✓ Python dependencies installed."
 
 # 5. Create the Wrapper Script
 echo_info "Creating command wrapper at $CMD_PATH..."
-cat > "$CMD_PATH" << EOF
+cat > "$CMD_PATH" << 'EOF'
 #!/data/data/com.termux/files/usr/bin/sh
 
 # Wrapper script for docker_cli.py
 # This allows running the tool with the 'docker' command.
 
 # Set the installation directory
-INSTALL_DIR="$INSTALL_DIR"
+INSTALL_DIR="$HOME/.android-docker-cli"
 
 # Path to the main python script
-PYTHON_SCRIPT="\$INSTALL_DIR/android_docker/docker_cli.py"
+PYTHON_SCRIPT="$INSTALL_DIR/android_docker/docker_cli.py"
 
 # Check if the main script exists
-if [ ! -f "\$PYTHON_SCRIPT" ]; then
-    echo "Error: The main script was not found at \$PYTHON_SCRIPT" >&2
+if [ ! -f "$PYTHON_SCRIPT" ]; then
+    echo "Error: The main script was not found at $PYTHON_SCRIPT" >&2
     echo "Please try reinstalling the tool." >&2
     exit 1
 fi
 
 # Execute the python script with all passed arguments
-exec env PYTHONPATH="\$INSTALL_DIR" python -m android_docker.docker_cli "\$@"
+exec env PYTHONPATH="$INSTALL_DIR" python -m android_docker.docker_cli "$@"
 EOF
 if [ $? -ne 0 ]; then
     echo_error "Failed to create the wrapper script. Please check permissions for $PREFIX/bin."
@@ -103,16 +103,16 @@ echo_info "✓ Command wrapper created and made executable."
 
 # 7. Create docker-compose Wrapper
 echo_info "Creating command wrapper at $DOCKER_COMPOSE_CMD_PATH..."
-cat > "$DOCKER_COMPOSE_CMD_PATH" << EOF
+cat > "$DOCKER_COMPOSE_CMD_PATH" << 'EOF'
 #!/data/data/com.termux/files/usr/bin/sh
 # Wrapper for docker_compose_cli.py
-INSTALL_DIR="$INSTALL_DIR"
-PYTHON_SCRIPT="\$INSTALL_DIR/android_docker/docker_compose_cli.py"
-if [ ! -f "\$PYTHON_SCRIPT" ]; then
-    echo "Error: The main script was not found at \$PYTHON_SCRIPT" >&2
+INSTALL_DIR="$HOME/.android-docker-cli"
+PYTHON_SCRIPT="$INSTALL_DIR/android_docker/docker_compose_cli.py"
+if [ ! -f "$PYTHON_SCRIPT" ]; then
+    echo "Error: The main script was not found at $PYTHON_SCRIPT" >&2
     exit 1
 fi
-exec env PYTHONPATH="\$INSTALL_DIR" python -m android_docker.docker_compose_cli "\$@"
+exec env PYTHONPATH="$INSTALL_DIR" python -m android_docker.docker_compose_cli "$@"
 EOF
 chmod +x "$DOCKER_COMPOSE_CMD_PATH"
 echo_info "✓ docker-compose command wrapper created."

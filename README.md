@@ -19,7 +19,7 @@ You can install this tool using the following methods:
 
 ```bash
 # Clone the project
-git clone git@github.com:xiaochen201807/android-docker-cli.git
+git clone https://github.com/xiaochen201807/android-docker-cli.git
 cd android-docker-cli
 
 # Install dependencies
@@ -40,7 +40,7 @@ sudo ln -s $(pwd)/android_docker/docker_cli.py /usr/local/bin/docker
 
 ```bash
 # Clone and run directly
-git clone git@github.com:xiaochen201807/android-docker-cli.git
+git clone https://github.com/xiaochen201807/android-docker-cli.git
 cd android-docker-cli
 python -m android_docker.docker_cli --help
 ```
