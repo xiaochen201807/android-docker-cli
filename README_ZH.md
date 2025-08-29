@@ -29,6 +29,9 @@ pkg update && pkg install python proot curl tar
 
 # Ubuntu/Debian
 sudo apt install python3 proot curl tar
+
+# 安装Python依赖（可选，用于增强功能）
+pip install psutil
 ```
 
 ## 快速使用
@@ -45,6 +48,10 @@ docker pull your-private-registry.com/my-image
 
 # 拉取一个公开镜像
 docker pull alpine:latest
+
+# 推送镜像到仓库
+docker push myimage:latest
+docker push username/myapp:v1.0
 
 # 在前台运行一个容器
 docker run alpine:latest echo "Hello from container"
@@ -98,6 +105,97 @@ docker rmi alpine:latest
 docker login your-private-registry.com
 ```
 
+## 新增的Docker命令
+
+### 镜像管理命令
+```bash
+# 构建镜像（概念性实现）
+docker build <context_path> -t <tag>
+
+# 保存镜像到tar文件
+docker save <image> -o <output.tar>
+
+# 从tar文件加载镜像
+docker load -i <input.tar>
+
+# 为镜像添加标签
+docker tag <source_image> <target_image>
+
+# 检查容器或镜像的详细信息
+docker inspect <container_id_or_image>
+
+# 显示镜像的历史记录
+docker history <image>
+
+# 推送镜像到Docker Registry
+docker push <image>[:tag]
+```
+
+### 容器管理命令
+```bash
+# 显示容器中运行的进程
+docker top <container_id>
+
+# 显示容器的资源使用统计
+docker stats [container_id]
+
+# 在容器和主机之间复制文件
+docker cp <source> <dest>
+# 例如：docker cp mycontainer:/app/logs ./logs
+# 例如：docker cp ./config mycontainer:/app/
+
+# 显示容器文件系统的变更
+docker diff <container_id>
+
+# 从容器创建新镜像
+docker commit <container_id> <repository>[:tag]
+
+# 导出容器文件系统到tar文件
+docker export <container_id> -o <output.tar>
+
+# 从tar文件导入镜像
+docker import <file.tar> <repository>[:tag]
+```
+
+### 网络管理命令
+```bash
+# 创建网络
+docker network create <network_name> [--driver bridge]
+
+# 列出网络
+docker network ls
+
+# 删除网络
+docker network rm <network_name>
+```
+
+### 卷管理命令
+```bash
+# 创建卷
+docker volume create <volume_name>
+
+# 列出卷
+docker volume ls
+
+# 删除卷
+docker volume rm <volume_name>
+```
+
+### 系统管理命令
+```bash
+# 显示系统信息
+docker info
+
+# 显示版本信息
+docker version
+
+# 显示帮助信息
+docker help [command]
+
+# 清理未使用的资源
+docker system prune [-a]
+```
+
 ## Docker Compose 支持
 
 此工具包含一个 `docker-compose` 命令，用于管理多容器应用。
@@ -134,6 +232,10 @@ services:
 - ✅ **Docker风格CLI**: 熟悉且直观的命令行界面。
 - ✅ **持久化存储**: 容器在重启后能保持其状态和文件系统，存储于 `~/.docker_proot_cache/`。
 - ✅ **Android优化**: 针对 Termux 环境进行了特别优化。
+- ✅ **扩展的镜像管理**: `build`, `save`, `load`, `tag`, `inspect`, `history`。
+- ✅ **增强的容器管理**: `top`, `stats`, `cp`, `diff`, `commit`, `export`, `import`。
+- ✅ **网络和卷管理**: `network create/ls/rm`, `volume create/ls/rm`。
+- ✅ **系统管理**: `info`, `version`, `help`, `system prune`。
 
 ## 故障排除
 
@@ -143,6 +245,10 @@ curl --version && tar --version && proot --version
 
 # 使用详细日志获取更多信息
 docker --verbose run alpine:latest
+
+# 显示帮助信息
+docker help
+docker help run  # 显示特定命令的帮助
 ```
 
 ## 限制说明
@@ -150,6 +256,7 @@ docker --verbose run alpine:latest
 - 基于 `proot`，并非完整的容器化（无内核级的进程或网络隔离）。
 - 某些系统调用可能不被支持。
 - 性能相较于原生 Docker 会有所下降。
+- 某些高级功能（如镜像构建、网络隔离）在proot环境下有限制，主要是概念性实现。
 
 ## 许可证
 
