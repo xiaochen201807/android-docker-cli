@@ -937,20 +937,33 @@ class DockerCLI:
         """为镜像添加标签"""
         logger.info(f"为镜像 {source_image} 添加标签 {target_image}")
         try:
-            source_dir = os.path.join(self.cache_dir, 'images', source_image.replace(':', '_'))
-            target_dir = os.path.join(self.cache_dir, 'images', target_image.replace(':', '_'))
+            # 检查源镜像是否存在（使用runner的缓存路径）
+            if not self.runner._is_image_cached(source_image):
+                logger.error(f"源镜像 {source_image} 不存在")
+                return False
             
-            if os.path.exists(source_dir):
-                # 创建符号链接或复制目录
-                if os.path.exists(target_dir):
-                    import shutil
-                    shutil.rmtree(target_dir)
+            # 获取源镜像的缓存路径
+            source_cache_path = self.runner._get_image_cache_path(source_image)
+            target_cache_path = self.runner._get_image_cache_path(target_image)
+            
+            if os.path.exists(source_cache_path):
+                # 复制tar.gz文件
                 import shutil
-                shutil.copytree(source_dir, target_dir)
+                shutil.copy2(source_cache_path, target_cache_path)
+                
+                # 复制info文件（如果存在）
+                source_info_path = source_cache_path + '.info'
+                target_info_path = target_cache_path + '.info'
+                if os.path.exists(source_info_path):
+                    shutil.copy2(source_info_path, target_info_path)
+                
+                # 保存新的缓存信息
+                self.runner._save_cache_info(target_image, target_cache_path)
+                
                 logger.info(f"标签添加成功: {target_image}")
                 return True
             else:
-                logger.error(f"源镜像 {source_image} 不存在")
+                logger.error(f"源镜像文件 {source_cache_path} 不存在")
                 return False
         except Exception as e:
             logger.error(f"添加标签失败: {e}")
