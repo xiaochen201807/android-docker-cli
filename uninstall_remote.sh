@@ -128,25 +128,31 @@ uninstall_remote() {
 
 # 清理缓存和配置
 cleanup_cache() {
-    CACHE_DIRS=(
-        "$HOME/.docker_proot_cache"
-        "$HOME/.docker"
-    )
-    
-    for cache_dir in "${CACHE_DIRS[@]}"; do
-        if [ -d "$cache_dir" ]; then
-            print_warning "发现缓存目录: $cache_dir"
-            read -p "是否删除此缓存目录？(y/N): " -n 1 -r
-            echo
-            if [[ $REPLY =~ ^[Yy]$ ]]; then
-                print_info "删除缓存目录: $cache_dir"
-                rm -rf "$cache_dir"
-                print_success "缓存目录已删除"
-            else
-                print_info "保留缓存目录: $cache_dir"
-            fi
+    print_warning "发现缓存目录: $HOME/.docker_proot_cache"
+    if [ -d "$HOME/.docker_proot_cache" ]; then
+        read -p "是否删除此缓存目录？(y/N): " -n 1 -r
+        echo
+        if [ "$REPLY" = "y" ] || [ "$REPLY" = "Y" ]; then
+            print_info "删除缓存目录: $HOME/.docker_proot_cache"
+            rm -rf "$HOME/.docker_proot_cache"
+            print_success "缓存目录已删除"
+        else
+            print_info "保留缓存目录: $HOME/.docker_proot_cache"
         fi
-    done
+    fi
+    
+    print_warning "发现缓存目录: $HOME/.docker"
+    if [ -d "$HOME/.docker" ]; then
+        read -p "是否删除此缓存目录？(y/N): " -n 1 -r
+        echo
+        if [ "$REPLY" = "y" ] || [ "$REPLY" = "Y" ]; then
+            print_info "删除缓存目录: $HOME/.docker"
+            rm -rf "$HOME/.docker"
+            print_success "缓存目录已删除"
+        else
+            print_info "保留缓存目录: $HOME/.docker"
+        fi
+    fi
 }
 
 # 验证卸载结果
@@ -227,7 +233,7 @@ main() {
     echo
     read -p "确认继续卸载？(y/N): " -n 1 -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [ "$REPLY" != "y" ] && [ "$REPLY" != "Y" ]; then
         print_info "取消卸载"
         exit 0
     fi
