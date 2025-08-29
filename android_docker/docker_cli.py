@@ -1562,16 +1562,14 @@ class DockerCLI:
         logger.info(f"推送镜像: {image_url}:{tag}")
         
         try:
-            # 检查镜像是否存在
-            # 镜像以 .tar.gz 文件的形式存储在缓存目录中
-            image_name = image_url.split(':')[0]
-            image_files = [f for f in os.listdir(self.cache_dir) if f.startswith(image_name) and f.endswith('.tar.gz')]
-            
-            if not image_files:
+            # 检查镜像是否存在（使用runner的缓存检查方法）
+            if not self.runner._is_image_cached(image_url):
                 logger.error(f"镜像 {image_url} 不存在，请先使用 docker pull 下载")
                 return False
             
-            logger.info(f"找到镜像文件: {image_files[0]}")
+            # 获取镜像的缓存路径
+            cache_path = self.runner._get_image_cache_path(image_url)
+            logger.info(f"找到镜像文件: {cache_path}")
             
             # 检查认证信息
             config = self._load_config()
