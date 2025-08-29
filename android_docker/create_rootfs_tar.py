@@ -1002,21 +1002,14 @@ class DockerImageToRootFS:
 
         # 根据是否为第一层和环境选择不同的选项
         if self._is_android_environment():
-            if is_first_layer:
-                # 第一层：创建基础文件系统
-                tar_options = [
-                    '--no-same-owner',
-                    '--no-same-permissions',
-                    '--dereference'  # 将硬链接转换为普通文件
-                ]
-            else:
-                # 后续层：更宽松的选项，允许覆盖已存在的文件
-                tar_options = [
-                    '--no-same-owner',
-                    '--no-same-permissions',
-                    '--dereference',
-                    '--overwrite'  # 覆盖已存在的文件
-                ]
+            # 在Android环境中，直接使用最宽松的模式避免硬链接问题
+            tar_options = [
+                '--no-same-owner',
+                '--no-same-permissions',
+                '--dereference'  # 将硬链接转换为普通文件
+            ]
+            if not is_first_layer:
+                tar_options.append('--overwrite')  # 后续层允许覆盖
         else:
             # 标准Linux环境选项
             tar_options = [
@@ -1026,35 +1019,26 @@ class DockerImageToRootFS:
 
         cmd = base_cmd + tar_options
 
-        try:
-            self._run_command(cmd)
-            logger.debug("tar提取成功")
-        except subprocess.CalledProcessError as e:
-            # 只在非quiet模式下显示警告
-            if not getattr(self, 'quiet', False):
-                if not self.verbose:
-                    logger.warning(f"tar命令失败，尝试宽松模式")
-                else:
-                    logger.warning(f"tar命令失败，尝试宽松模式: {e}")
-
-            # 使用最宽松的选项，允许错误但继续
+        # 在Android环境中，特别是第一层，直接使用宽松模式避免硬链接问题
+        if self._is_android_environment() and is_first_layer:
+            # 对于Android环境的第一层，直接使用最宽松的模式
             fallback_cmd = base_cmd + [
                 '--dereference',
                 '--no-same-owner',
                 '--no-same-permissions',
-                '--skip-old-files'  # 跳过已存在的文件
+                '--skip-old-files'  # 跳过有问题的文件
             ]
-
+            
             # 直接使用subprocess.run，允许非零退出码
             result = subprocess.run(fallback_cmd, capture_output=True, text=True)
 
             if result.returncode == 0:
                 if not self.quiet:
-                    logger.info("使用宽松模式提取成功")
+                    logger.debug("tar提取成功")
             elif result.returncode == 2:
                 # tar退出码2通常表示有警告但部分成功
                 if not self.quiet:
-                    logger.info("tar提取完成（有警告，但大部分文件已提取）")
+                    logger.debug("tar提取完成（有警告，但大部分文件已提取）")
                 if self.verbose and result.stderr:
                     # 只在verbose模式下显示错误详情
                     error_lines = result.stderr.strip().split('\n')[:3]
@@ -1064,6 +1048,46 @@ class DockerImageToRootFS:
                 if result.stderr:
                     logger.error(f"错误信息: {result.stderr[:300]}...")  # 限制错误信息长度
                 raise subprocess.CalledProcessError(result.returncode, fallback_cmd, result.stderr)
+        else:
+            # 其他情况使用正常模式和fallback机制
+            try:
+                self._run_command(cmd)
+                logger.debug("tar提取成功")
+            except subprocess.CalledProcessError as e:
+                # 只在非quiet模式下显示警告
+                if not getattr(self, 'quiet', False):
+                    if not self.verbose:
+                        logger.warning(f"tar命令失败，尝试宽松模式")
+                    else:
+                        logger.warning(f"tar命令失败，尝试宽松模式: {e}")
+
+                # 使用最宽松的选项，允许错误但继续
+                fallback_cmd = base_cmd + [
+                    '--dereference',
+                    '--no-same-owner',
+                    '--no-same-permissions',
+                    '--skip-old-files'  # 跳过已存在的文件
+                ]
+
+                # 直接使用subprocess.run，允许非零退出码
+                result = subprocess.run(fallback_cmd, capture_output=True, text=True)
+
+                if result.returncode == 0:
+                    if not self.quiet:
+                        logger.info("使用宽松模式提取成功")
+                elif result.returncode == 2:
+                    # tar退出码2通常表示有警告但部分成功
+                    if not self.quiet:
+                        logger.info("tar提取完成（有警告，但大部分文件已提取）")
+                    if self.verbose and result.stderr:
+                        # 只在verbose模式下显示错误详情
+                        error_lines = result.stderr.strip().split('\n')[:3]
+                        logger.debug(f"tar警告（仅显示前3行）: {error_lines}")
+                else:
+                    logger.error(f"tar提取失败，退出码: {result.returncode}")
+                    if result.stderr:
+                        logger.error(f"错误信息: {result.stderr[:300]}...")  # 限制错误信息长度
+                    raise subprocess.CalledProcessError(result.returncode, fallback_cmd, result.stderr)
 
 
     
