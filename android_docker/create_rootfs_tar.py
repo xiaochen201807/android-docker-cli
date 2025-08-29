@@ -1021,6 +1021,7 @@ class DockerImageToRootFS:
 
         # 在Android环境中，特别是第一层，直接使用宽松模式避免硬链接问题
         if self._is_android_environment() and is_first_layer:
+            logger.info("🔧 检测到Android环境第一层，使用宽松模式避免硬链接问题")
             # 对于Android环境的第一层，直接使用最宽松的模式
             fallback_cmd = base_cmd + [
                 '--dereference',
@@ -1050,6 +1051,7 @@ class DockerImageToRootFS:
                 raise subprocess.CalledProcessError(result.returncode, fallback_cmd, result.stderr)
         else:
             # 其他情况使用正常模式和fallback机制
+            logger.info(f"📦 使用标准模式提取 (Android: {self._is_android_environment()}, 第一层: {is_first_layer})")
             try:
                 self._run_command(cmd)
                 logger.debug("tar提取成功")
@@ -1279,6 +1281,7 @@ def main():
         logging.getLogger().setLevel(logging.ERROR)
     
     logger.info(f"开始处理Docker镜像: {args.image_url}")
+    logger.info("🚀 [版本标识] create_rootfs_tar.py v2.0 - 已优化硬链接处理")
     
     # 将代理参数传递给处理器
     processor = DockerImageToRootFS(args.image_url, args.output, args.username, args.password, args.arch, args.verbose, args.quiet)
