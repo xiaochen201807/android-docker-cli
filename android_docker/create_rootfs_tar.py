@@ -1008,13 +1008,12 @@ class DockerImageToRootFS:
                     '--dereference'  # 将硬链接转换为普通文件
                 ]
             else:
-                # 后续层：更宽松的选项，允许覆盖和忽略错误
+                # 后续层：更宽松的选项，允许覆盖已存在的文件
                 tar_options = [
                     '--no-same-owner',
                     '--no-same-permissions',
                     '--dereference',
-                    '--overwrite',
-                    '--skip-old-files'  # 跳过已存在的文件而不是报错
+                    '--overwrite'  # 覆盖已存在的文件
                 ]
         else:
             # 标准Linux环境选项
