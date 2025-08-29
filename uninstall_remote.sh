@@ -1,8 +1,6 @@
 #!/bin/bash
-"""
-远程安装卸载脚本
-安全地卸载通过远程安装脚本安装的android-docker-cli
-"""
+# 远程安装卸载脚本
+# 安全地卸载通过远程安装脚本安装的android-docker-cli
 
 set -e
 
