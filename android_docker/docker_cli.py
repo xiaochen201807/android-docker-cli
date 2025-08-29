@@ -897,19 +897,49 @@ class DockerCLI:
         return True
 
     def save(self, image_url, output_path):
-        """保存镜像到tar文件"""
+        """保存镜像到tar文件（Docker导入格式）"""
         logger.info(f"保存镜像 {image_url} 到 {output_path}")
         try:
-            # 获取镜像的rootfs路径
-            image_dir = os.path.join(self.cache_dir, 'images', image_url.replace(':', '_'))
-            if os.path.exists(image_dir):
-                import tarfile
-                with tarfile.open(output_path, 'w') as tar:
-                    tar.add(image_dir, arcname='.')
+            # 标准化镜像名称（添加默认tag）
+            if ':' not in image_url:
+                full_image_url = image_url + ':latest'
+            else:
+                full_image_url = image_url
+            
+            # 检查镜像是否存在（添加调试信息）
+            logger.debug(f"检查镜像: {full_image_url}")
+            logger.debug(f"备选镜像名: {image_url}")
+            
+            if not self.runner._is_image_cached(full_image_url):
+                logger.debug(f"镜像 {full_image_url} 不存在，尝试 {image_url}")
+                # 如果带tag的不存在，尝试不带tag的
+                if not self.runner._is_image_cached(image_url):
+                    logger.error(f"镜像 {image_url} 不存在")
+                    # 列出可用的镜像进行调试
+                    logger.info("可用的镜像:")
+                    self.runner.list_cache()
+                    return False
+                else:
+                    full_image_url = image_url
+                    logger.debug(f"使用镜像名: {full_image_url}")
+            else:
+                logger.debug(f"找到镜像: {full_image_url}")
+            
+            # 获取镜像的缓存路径
+            cache_path = self.runner._get_image_cache_path(full_image_url)
+            
+            if os.path.exists(cache_path):
+                # 直接复制tar.gz文件（这是根文件系统，可用于docker import）
+                import shutil
+                shutil.copy2(cache_path, output_path)
+                
                 logger.info(f"镜像已保存到 {output_path}")
+                logger.info("注意：此文件是根文件系统格式，请在Docker环境中使用以下命令导入：")
+                logger.info(f"  docker import {output_path} {image_url}")
+                logger.info(f"  docker push {image_url}")
                 return True
             else:
-                logger.error(f"镜像 {image_url} 不存在")
+                logger.error(f"镜像文件 {cache_path} 不存在")
                 return False
         except Exception as e:
             logger.error(f"保存镜像失败: {e}")
