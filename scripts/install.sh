@@ -44,7 +44,9 @@ check_dependencies() {
     fi
     
     # 检查proot
-    if ! command -v proot &> /dev/null; then
+    if command -v proot >/dev/null 2>&1; then
+        print_info "发现proot: $(command -v proot)"
+    else
         print_warning "未找到proot，请先安装proot"
         print_info "Android Termux: pkg install proot"
         print_info "Ubuntu/Debian: sudo apt install proot"
@@ -52,7 +54,9 @@ check_dependencies() {
     fi
     
     # 检查curl
-    if ! command -v curl &> /dev/null; then
+    if command -v curl >/dev/null 2>&1; then
+        print_info "发现curl: $(command -v curl)"
+    else
         print_warning "未找到curl，请先安装curl"
         print_info "Android Termux: pkg install curl"
         print_info "Ubuntu/Debian: sudo apt install curl"
@@ -60,10 +64,11 @@ check_dependencies() {
     fi
     
     # 检查tar
-    if ! command -v tar &> /dev/null; then
+    if command -v tar >/dev/null 2>&1; then
+        print_info "发现tar: $(command -v tar)"
+    else
         print_warning "未找到tar，请先安装tar"
         print_info "Android Termux: pkg install tar"
-        print_info "Ubuntu/Debian: sudo apt install tar"
         exit 1
     fi
     
