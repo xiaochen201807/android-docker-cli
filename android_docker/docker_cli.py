@@ -1576,19 +1576,27 @@ class DockerCLI:
             auths = config.get('auths', {})
             
             # 确定registry服务器
-            if '/' in image_url.split(':')[0]:
-                registry = image_url.split('/')[0]
+            image_without_tag = image_url.split(':')[0]
+            if '/' in image_without_tag and '.' in image_without_tag.split('/')[0]:
+                # 如果第一部分包含点，说明是自定义registry（如 my-registry.com/image）
+                registry = image_without_tag.split('/')[0]
             else:
+                # 否则是Docker Hub镜像（包括用户镜像如 xiaochen1649/nginx）
                 registry = "index.docker.io"
             
             # 查找对应的认证信息
+            logger.debug(f"查找registry认证信息: {registry}")
+            logger.debug(f"可用的认证服务器: {list(auths.keys())}")
+            
             username = None
             password = None
             for server, creds in auths.items():
                 server_name = urlparse(server).hostname or server
+                logger.debug(f"检查服务器: {server} (解析为: {server_name})")
                 if server_name == registry or (server_name == "index.docker.io" and registry == "index.docker.io"):
                     username = creds.get('username')
                     password = creds.get('password')
+                    logger.debug(f"找到匹配的认证信息")
                     break
             
             if not username or not password:
