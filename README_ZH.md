@@ -25,7 +25,10 @@ cd android-docker-cli
 # 安装依赖
 pip install -r requirements.txt
 
-# 创建软链接到系统路径（可选）
+# 使用安装脚本（推荐）
+./scripts/install.sh
+
+# 或者手动创建软链接到系统路径
 sudo ln -s $(pwd)/android_docker/docker_cli.py /usr/local/bin/docker
 ```
 
@@ -36,6 +39,14 @@ sudo ln -s $(pwd)/android_docker/docker_cli.py /usr/local/bin/docker
 git clone <your-repository-url>
 cd android-docker-cli
 python -m android_docker.docker_cli --help
+```
+
+## 卸载
+
+如果需要卸载，可以使用卸载脚本：
+
+```bash
+./scripts/uninstall.sh
 ```
 
 这将会创建一个名为 `docker` 的可执行命令到您的系统路径中。安装后，您只需输入 `docker` 即可运行此工具。

@@ -25,7 +25,10 @@ cd android-docker-cli
 # Install dependencies
 pip install -r requirements.txt
 
-# Create symlink to system path (optional)
+# Use installation script (recommended)
+./scripts/install.sh
+
+# Or manually create symlink to system path
 sudo ln -s $(pwd)/android_docker/docker_cli.py /usr/local/bin/docker
 ```
 
@@ -36,6 +39,14 @@ sudo ln -s $(pwd)/android_docker/docker_cli.py /usr/local/bin/docker
 git clone <your-repository-url>
 cd android-docker-cli
 python -m android_docker.docker_cli --help
+```
+
+## Uninstall
+
+If you need to uninstall, you can use the uninstall script:
+
+```bash
+./scripts/uninstall.sh
 ```
 
 ## Install Dependencies
