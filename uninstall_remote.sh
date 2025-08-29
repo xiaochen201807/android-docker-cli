@@ -231,9 +231,8 @@ main() {
         echo "- docker-compose命令包装器: $PREFIX/bin/docker-compose"
     fi
     echo
-    read -p "确认继续卸载？(y/N): " -n 1 -r
-    echo
-    if [ "$REPLY" != "y" ] && [ "$REPLY" != "Y" ]; then
+    read -p "确认继续卸载？(y/N): " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
         print_info "取消卸载"
         exit 0
     fi
