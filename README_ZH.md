@@ -19,13 +19,17 @@
 
 ```bash
 # 克隆项目
-git clone <your-repository-url>
+git clone git@github.com:xiaochen201807/android-docker-cli.git
 cd android-docker-cli
 
 # 安装依赖
 pip install -r requirements.txt
 
 # 使用安装脚本（推荐）
+# 在Termux环境中使用：
+./scripts/install_termux.sh
+
+# 在其他Linux环境中使用：
 ./scripts/install.sh
 
 # 或者手动创建软链接到系统路径
@@ -36,7 +40,7 @@ sudo ln -s $(pwd)/android_docker/docker_cli.py /usr/local/bin/docker
 
 ```bash
 # 克隆项目后直接运行
-git clone <your-repository-url>
+git clone git@github.com:xiaochen201807/android-docker-cli.git
 cd android-docker-cli
 python -m android_docker.docker_cli --help
 ```
