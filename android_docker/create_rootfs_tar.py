@@ -320,7 +320,7 @@ class DockerRegistryClient:
         return output_path
 
 class DockerImageToRootFS:
-    def __init__(self, image_url, output_path=None, username=None, password=None, architecture=None, verbose=False):
+    def __init__(self, image_url, output_path=None, username=None, password=None, architecture=None, verbose=False, quiet=False):
         self.image_url = image_url
         self.output_path = output_path or f"{self._get_image_name()}_rootfs.tar"
         self.temp_dir = None
@@ -328,7 +328,9 @@ class DockerImageToRootFS:
         self.password = password
         self.architecture = architecture or self._get_current_architecture()
         self.verbose = verbose
-        logger.info(f"目标架构: {self.architecture}")
+        self.quiet = quiet
+        if not quiet:
+            logger.info(f"目标架构: {self.architecture}")
         
     def _get_current_architecture(self):
         """获取当前系统的架构"""
@@ -1028,7 +1030,12 @@ class DockerImageToRootFS:
             self._run_command(cmd)
             logger.debug("tar提取成功")
         except subprocess.CalledProcessError as e:
-            logger.warning(f"tar命令失败，尝试宽松模式: {e}")
+            # 只在非quiet模式下显示警告
+            if not getattr(self, 'quiet', False):
+                if not self.verbose:
+                    logger.warning(f"tar命令失败，尝试宽松模式")
+                else:
+                    logger.warning(f"tar命令失败，尝试宽松模式: {e}")
 
             # 使用最宽松的选项，允许错误但继续
             fallback_cmd = base_cmd + [
@@ -1042,18 +1049,20 @@ class DockerImageToRootFS:
             result = subprocess.run(fallback_cmd, capture_output=True, text=True)
 
             if result.returncode == 0:
-                logger.info("使用宽松模式提取成功")
+                if not self.quiet:
+                    logger.info("使用宽松模式提取成功")
             elif result.returncode == 2:
                 # tar退出码2通常表示有警告但部分成功
-                logger.info("tar提取完成（有警告，但大部分文件已提取）")
-                if result.stderr:
-                    # 只显示前几行错误，避免日志过长
-                    error_lines = result.stderr.strip().split('\n')[:5]
-                    logger.debug(f"tar警告（仅显示前5行）: {error_lines}")
+                if not self.quiet:
+                    logger.info("tar提取完成（有警告，但大部分文件已提取）")
+                if self.verbose and result.stderr:
+                    # 只在verbose模式下显示错误详情
+                    error_lines = result.stderr.strip().split('\n')[:3]
+                    logger.debug(f"tar警告（仅显示前3行）: {error_lines}")
             else:
                 logger.error(f"tar提取失败，退出码: {result.returncode}")
                 if result.stderr:
-                    logger.error(f"错误信息: {result.stderr[:500]}...")  # 限制错误信息长度
+                    logger.error(f"错误信息: {result.stderr[:300]}...")  # 限制错误信息长度
                 raise subprocess.CalledProcessError(result.returncode, fallback_cmd, result.stderr)
 
 
@@ -1241,30 +1250,14 @@ def main():
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    # 如果使用简洁模式，设置日志级别为WARNING以减少信息输出
+    # 如果使用简洁模式，设置日志级别为ERROR以减少信息输出
     if args.quiet:
-        logging.getLogger().setLevel(logging.WARNING)
-        # 创建一个自定义的简洁日志处理器
-        class QuietHandler(logging.StreamHandler):
-            def emit(self, record):
-                if record.levelno >= logging.WARNING:
-                    super().emit(record)
-                elif record.levelno == logging.INFO and not record.getMessage().startswith('✓'):
-                    # 只显示成功信息，不显示步骤信息
-                    pass
-                else:
-                    super().emit(record)
-        
-        # 替换根日志处理器
-        for handler in logging.getLogger().handlers[:]:
-            logging.getLogger().removeHandler(handler)
-        logging.getLogger().addHandler(QuietHandler())
-        logging.getLogger().setLevel(logging.INFO)
+        logging.getLogger().setLevel(logging.ERROR)
     
     logger.info(f"开始处理Docker镜像: {args.image_url}")
     
     # 将代理参数传递给处理器
-    processor = DockerImageToRootFS(args.image_url, args.output, args.username, args.password, args.arch, args.verbose)
+    processor = DockerImageToRootFS(args.image_url, args.output, args.username, args.password, args.arch, args.verbose, args.quiet)
     # 在客户端中也需要设置代理
     if args.proxy:
         # 这是个简化处理，理想情况下应该在DockerRegistryClient中处理
