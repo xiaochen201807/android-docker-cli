@@ -89,7 +89,7 @@ class ProotRunner:
                 logger.warning(f"读取缓存信息失败: {e}")
         return None
 
-    def _download_image(self, image_url, force_download=False, username=None, password=None):
+    def _download_image(self, image_url, force_download=False, username=None, password=None, quiet=False):
         """下载镜像到缓存"""
         cache_path = self._get_image_cache_path(image_url)
 
@@ -97,11 +97,13 @@ class ProotRunner:
         if not force_download and self._is_image_cached(image_url):
             cache_info = self._load_cache_info(image_url)
             if cache_info:
-                logger.info(f"使用缓存的镜像: {cache_path}")
-                logger.info(f"缓存创建时间: {cache_info.get('created_time_str', 'Unknown')}")
+                if not quiet:
+                    logger.info(f"使用缓存的镜像: {cache_path}")
+                    logger.info(f"缓存创建时间: {cache_info.get('created_time_str', 'Unknown')}")
                 return cache_path
 
-        logger.info(f"下载镜像: {image_url}")
+        if not quiet:
+            logger.info(f"下载镜像: {image_url}")
 
         # 调用create_rootfs_tar.py脚本
         cmd = [
@@ -119,11 +121,20 @@ class ProotRunner:
         if proxy:
             cmd.extend(['--proxy', proxy])
 
+        # 在quiet模式下添加quiet参数
+        if quiet:
+            cmd.append('--quiet')
+
         cmd.append(image_url)
 
         try:
-            subprocess.run(cmd, check=True)
-            logger.info(f"镜像已下载并缓存: {cache_path}")
+            # 在quiet模式下抑制子进程输出
+            stdout = subprocess.DEVNULL if quiet else None
+            stderr = subprocess.DEVNULL if quiet else None
+            subprocess.run(cmd, check=True, stdout=stdout, stderr=stderr)
+            
+            if not quiet:
+                logger.info(f"镜像已下载并缓存: {cache_path}")
 
             # 保存缓存信息
             self._save_cache_info(image_url, cache_path)
@@ -131,7 +142,8 @@ class ProotRunner:
             return cache_path
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"下载镜像失败: {e}")
+            if not quiet:
+                logger.error(f"下载镜像失败: {e}")
             return None
 
     def _is_image_url(self, input_str):

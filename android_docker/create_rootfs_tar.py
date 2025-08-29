@@ -193,18 +193,21 @@ class DockerRegistryClient:
         status_line = None
         response_headers = {}
         body_start = 0
+        header_section = True
         
         for i, line in enumerate(lines):
             if line.startswith('HTTP/'):
                 status_line = line
+                header_section = True
+                continue
+            elif header_section and line.strip() == '':
+                # 空行表示头部结束，接下来是响应体
                 body_start = i + 1
+                header_section = False
                 break
-            elif ':' in line:
+            elif header_section and ':' in line:
                 key, value = line.split(':', 1)
                 response_headers[key.strip().lower()] = value.strip()
-
-        # 如果需要认证且还没有token
-        # 由于我们已经预先获取了token，这里不再需要处理401
 
         # 提取状态码
         status_code = 200  # 默认值
@@ -214,8 +217,16 @@ class DockerRegistryClient:
             except (IndexError, ValueError):
                 pass
 
-        # 提取响应体
-        body = '\n'.join(lines[body_start:]) if body_start < len(lines) else ''
+        # 提取响应体 - 跳过curl的调试输出
+        body_lines = []
+        for i in range(body_start, len(lines)):
+            line = lines[i]
+            # 跳过curl的调试信息行
+            if line.startswith('* ') or line.startswith('> ') or line.startswith('< '):
+                continue
+            body_lines.append(line)
+        
+        body = '\n'.join(body_lines).strip()
 
         if status_code >= 400:
             raise Exception(f"HTTP {status_code}: {body}")
@@ -248,8 +259,34 @@ class DockerRegistryClient:
         path = f"{self.image_name}/manifests/{self.tag}"
         response = self._make_registry_request(path, headers)
 
-        manifest = json.loads(response['body'])
-        content_type = response['headers'].get('content-type', '')
+        try:
+            # 添加调试信息
+            if self.verbose:
+                logger.debug(f"Response body (first 200 chars): {response['body'][:200]}")
+                logger.debug(f"Response headers: {response['headers']}")
+            
+            # 清理响应体 - 移除可能的多余空行和curl输出
+            body = response['body'].strip()
+            if not body:
+                raise ValueError("响应体为空")
+            
+            # 尝试找到JSON的开始位置
+            json_start = body.find('{')
+            if json_start == -1:
+                json_start = body.find('[')
+            
+            if json_start > 0:
+                body = body[json_start:]
+                if self.verbose:
+                    logger.debug(f"Cleaned body (first 200 chars): {body[:200]}")
+            
+            manifest = json.loads(body)
+            content_type = response['headers'].get('content-type', '')
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON解析失败: {e}")
+            logger.error(f"响应体内容: {response['body'][:500]}")
+            logger.error(f"响应头: {response['headers']}")
+            raise
 
         if self.verbose:
             logger.info(f"Manifest类型: {content_type}")

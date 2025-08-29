@@ -167,12 +167,23 @@ class DockerCLI:
                 break
         
         # 现在pull直接调用runner的下载方法
-        cache_path = self.runner._download_image(
-            image_url,
-            force_download=force,
-            username=username,
-            password=password
-        )
+        if quiet:
+            # 在quiet模式下，临时抑制日志输出
+            original_level = logging.getLogger().level
+            logging.getLogger().setLevel(logging.ERROR)
+            
+        try:
+            cache_path = self.runner._download_image(
+                image_url,
+                force_download=force,
+                username=username,
+                password=password,
+                quiet=quiet
+            )
+        finally:
+            if quiet:
+                # 恢复原始日志级别
+                logging.getLogger().setLevel(original_level)
 
         if cache_path:
             if not quiet:
